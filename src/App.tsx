@@ -8,6 +8,7 @@ import { COMMON_CURRENCY_CODES, normalizeCurrency } from "./currencies";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
 import { saveReimbursement } from "./db";
+import AdminPanel from "./AdminPanel";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
 
@@ -51,6 +52,8 @@ const emptyHeader: HeaderInfo = {
 export default function App() {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [isAdminView, setIsAdminView] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [header, setHeader] = useState<HeaderInfo>(emptyHeader);
   const [expenses, setExpenses] = useState<ExpenseLine[]>([]);
 
@@ -260,6 +263,20 @@ export default function App() {
     window.print();
   }
 
+  function handleAdminToggle() {
+    if (!isAuthenticated) {
+      const password = window.prompt("请输入后台密码：");
+      if (password === "admin123") {
+        setIsAuthenticated(true);
+        setIsAdminView(true);
+      } else if (password !== null) {
+        window.alert("密码错误！");
+      }
+    } else {
+      setIsAdminView(!isAdminView);
+    }
+  }
+
   const attachmentItems = useMemo(
     () => attachmentItemsFromExpenses(expenses, blobUrlByExpenseId),
     [expenses, blobUrlByExpenseId]
@@ -272,12 +289,22 @@ export default function App() {
           <h1 className="app-title">Expense Reimbursement Form</h1>
           <p className="app-sub">费用报销单</p>
         </div>
-        <div className="app-brand">
-          {header.companyName.trim() || "—"}
+        <div className="app-header-right">
+          <div className="app-brand">{header.companyName.trim() || "—"}</div>
+          <button
+            type="button"
+            className="btn btn--ghost app-admin-toggle"
+            onClick={handleAdminToggle}
+          >
+            {isAuthenticated ? (isAdminView ? "返回报销" : "查看后台") : "查看后台"}
+          </button>
         </div>
       </header>
 
-      <main className="app-main">
+      {isAdminView ? (
+        <AdminPanel onClose={() => setIsAdminView(false)} />
+      ) : (
+        <main className="app-main">
         <datalist id="currency-presets">
           {COMMON_CURRENCY_CODES.map((code) => (
             <option key={code} value={code} />
@@ -637,8 +664,9 @@ export default function App() {
           </>
         )}
       </main>
+      )}
 
-      {!confirmOpen && (
+      {!isAdminView && !confirmOpen && (
         <footer className="app-footer no-print">
           <div className="footer-buttons">
             {step === 1 ? (
@@ -683,7 +711,7 @@ export default function App() {
         </footer>
       )}
 
-      {confirmOpen && (
+      {!isAdminView && confirmOpen && (
         <footer className="app-footer no-print confirm-sticky-footer">
           <div className="footer-buttons confirm-footer-grid">
             <button

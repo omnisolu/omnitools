@@ -103,3 +103,41 @@ export async function saveReimbursement(options: {
   await transactionComplete(tx);
   db.close();
 }
+
+function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getAllReimbursementData(): Promise<
+  Array<{ reimbursement: ReimbursementRecord; expenses: ExpenseLineRecord[] }>
+> {
+  const db = await openDatabase();
+  const tx = db.transaction([STORE_REIMBURSEMENTS, STORE_EXPENSE_LINES], "readonly");
+  const reimbursements = tx.objectStore(STORE_REIMBURSEMENTS);
+  const expenseLines = tx.objectStore(STORE_EXPENSE_LINES);
+
+  const [reimbursementList, expenseLineList] = await Promise.all([
+    promisifyRequest<ReimbursementRecord[]>(reimbursements.getAll()),
+    promisifyRequest<ExpenseLineRecord[]>(expenseLines.getAll()),
+  ]);
+
+  await transactionComplete(tx);
+  db.close();
+
+  const expenseByReimbursement = new Map<string, ExpenseLineRecord[]>();
+  for (const expense of expenseLineList) {
+    const list = expenseByReimbursement.get(expense.reimbursementId) || [];
+    list.push(expense);
+    expenseByReimbursement.set(expense.reimbursementId, list);
+  }
+
+  return reimbursementList
+    .map((reimbursement) => ({
+      reimbursement,
+      expenses: expenseByReimbursement.get(reimbursement.id) || [],
+    }))
+    .sort((a, b) => b.reimbursement.createdAt.localeCompare(a.reimbursement.createdAt));
+}
