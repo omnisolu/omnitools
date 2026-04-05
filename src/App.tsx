@@ -717,6 +717,11 @@ export default function App() {
               打印
             </button>
           </div>
+          {dbMessage ? (
+            <div className="confirm-message">
+              <p>{dbMessage}</p>
+            </div>
+          ) : null}
         </footer>
       )}
     </div>
