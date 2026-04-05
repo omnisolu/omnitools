@@ -1,0 +1,337 @@
+/* Excel-style reimbursement form — colors & layout per reference (#2E75B6, #E2EFDA) */
+
+.form-template {
+  --excel-blue: #2e75b6;
+  --excel-green: #e2efda;
+  --excel-grid: #c8c8c8;
+  --excel-bg: #ffffff;
+  box-sizing: border-box;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 12px 14px 24px;
+  background: var(--excel-bg);
+  color: #000;
+  font-family: Calibri, "Calibri Light", "Segoe UI", Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.35;
+  border: 1px dashed var(--excel-grid);
+}
+
+.form-template__banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+}
+
+.form-template__title {
+  margin: 0;
+  font-size: 20pt;
+  font-weight: 700;
+  color: var(--excel-blue);
+  letter-spacing: 0.01em;
+}
+
+.form-template__company {
+  font-size: 12pt;
+  font-weight: 700;
+  color: var(--excel-blue);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ----- Meta table + Expense Period column ----- */
+
+.form-template__meta {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 12px;
+  table-layout: fixed;
+}
+
+.form-template__meta th,
+.form-template__meta td {
+  border: 1px dashed var(--excel-grid);
+  padding: 5px 8px;
+  vertical-align: top;
+}
+
+.form-template__meta-label {
+  width: 22%;
+  font-size: 10pt;
+  font-weight: 600;
+  text-align: left;
+  background: #f7f7f7;
+  color: #000;
+}
+
+.form-template__meta-value {
+  width: 53%;
+  font-size: 11pt;
+  color: #000;
+}
+
+.form-template__meta-purpose {
+  min-height: 3.2em;
+  white-space: pre-wrap;
+}
+
+.form-template__meta-hint {
+  display: block;
+  font-size: 9pt;
+  font-weight: 400;
+  color: #444;
+  margin-top: 4px;
+}
+
+.form-template__fx-note {
+  font-size: 9.5pt;
+  margin: 0 0 8px;
+  color: #333;
+}
+
+.form-template__period {
+  width: 25%;
+  padding: 0 !important;
+  vertical-align: top;
+  border: 1px dashed var(--excel-grid);
+  background: #fff;
+}
+
+.form-template__period-title {
+  background: var(--excel-blue);
+  color: #fff;
+  font-weight: 700;
+  font-size: 10pt;
+  text-align: center;
+  padding: 6px 8px;
+  letter-spacing: 0.03em;
+}
+
+.form-template__period-fields {
+  padding: 10px 10px 12px;
+  font-size: 10.5pt;
+}
+
+.form-template__period-fields > div + div {
+  margin-top: 8px;
+}
+
+.form-template__period-key {
+  font-weight: 600;
+}
+
+/* ----- Main expense grid ----- */
+
+.form-template__grid {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 10px;
+  table-layout: fixed;
+}
+
+.form-template__grid thead th {
+  background: var(--excel-blue);
+  color: #fff;
+  font-weight: 700;
+  font-size: 10pt;
+  text-align: center;
+  padding: 7px 5px;
+  border: 1px solid var(--excel-blue);
+  letter-spacing: 0.02em;
+}
+
+.form-template__grid tbody td {
+  border: 1px dashed var(--excel-grid);
+  padding: 5px 6px;
+  font-size: 10.5pt;
+  vertical-align: top;
+}
+
+.form-template__grid .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.form-template__grid .col-date {
+  width: 82px;
+}
+
+.form-template__grid .col-cat {
+  width: 118px;
+}
+
+.form-template__grid .col-num {
+  width: 64px;
+}
+
+.form-template__grid .col-ccy {
+  width: 44px;
+}
+
+.form-template__grid .col-rate {
+  width: 58px;
+}
+
+.form-template__grid .col-home {
+  width: 92px;
+  font-size: 9pt;
+  line-height: 1.2;
+}
+
+.form-template__th-sub {
+  display: block;
+  font-size: 8pt;
+  font-weight: 600;
+  margin-top: 2px;
+  opacity: 0.95;
+}
+
+.form-template__home-cell {
+  vertical-align: top;
+  white-space: normal;
+}
+
+.form-template__home-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 8.5pt;
+  text-align: right;
+}
+
+.form-template__grid .ccy {
+  text-align: center;
+  font-weight: 600;
+  font-size: 9.5pt;
+}
+
+.form-template__grid .rate-cell {
+  font-size: 8.5pt;
+}
+
+/* ----- Totals (right block) ----- */
+
+.form-template__totals-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.form-template__totals-table {
+  border-collapse: collapse;
+  min-width: 300px;
+}
+
+.form-template__totals-table th,
+.form-template__totals-table td {
+  border: 1px dashed var(--excel-grid);
+  padding: 6px 12px;
+  font-size: 10.5pt;
+}
+
+.form-template__totals-table th {
+  text-align: left;
+  font-weight: 700;
+  background: #f3f3f3;
+}
+
+.form-template__totals-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  min-width: 108px;
+  font-weight: 600;
+}
+
+.form-template__total-row th {
+  font-weight: 700;
+  background: #e8e8e8;
+}
+
+.form-template__total-amount {
+  background: var(--excel-green) !important;
+  font-weight: 700 !important;
+  font-size: 11pt;
+}
+
+/* ----- Receipt reminder ----- */
+
+.form-template__receipt-note {
+  margin: 10px 0 18px;
+  font-size: 10.5pt;
+  font-weight: 700;
+  font-style: italic;
+  color: #000;
+}
+
+/* ----- Signatures ----- */
+
+.form-template__signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px 36px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.form-template__sig-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-template__sig-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.form-template__sig-line-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-template__sig-line {
+  display: block;
+  border-bottom: 1.5px solid #000;
+  min-height: 28px;
+}
+
+.form-template__date-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  width: 88px;
+}
+
+.form-template__date-label {
+  font-size: 9pt;
+  font-weight: 600;
+}
+
+.form-template__date-line {
+  display: block;
+  width: 100%;
+  border-bottom: 1px solid #000;
+  min-height: 14px;
+}
+
+.form-template__sig-caption {
+  font-size: 10pt;
+  font-weight: 600;
+}
+
+@media print {
+  .form-template {
+    border: 1px dashed #aaa;
+    max-width: none;
+    padding: 8px 0 16px;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
