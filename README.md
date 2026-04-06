@@ -83,17 +83,41 @@ sudo bash upgrade.sh
 
 如果已经部署了旧版本（邮件功能不可用），使用修复脚本快速升级：
 
+**对于未启用 SSL 的系统：**
+
 ```bash
 cd /path/to/omnitools
 sudo bash fix-email-service.sh
 ```
 
-此脚本会：
-1. 拉取最新代码
-2. 配置邮件服务 systemd
-3. 启动邮件服务
-4. 更新 nginx 配置并应用 API 代理
-5. 验证所有配置
+**对于已启用 HTTPS/SSL 的系统：**
+
+使用专门的 nginx 配置更新脚本，它会保留 SSL 设置：
+
+```bash
+cd /path/to/omnitools
+sudo bash update-nginx-proxy.sh /etc/nginx/sites-available/omnitools
+```
+
+或指定你的实际 nginx 配置文件路径：
+```bash
+# 常见路径
+sudo bash update-nginx-proxy.sh /etc/nginx/sites-enabled/default
+sudo bash update-nginx-proxy.sh /etc/nginx/conf.d/omnitools.conf
+```
+
+⚠️ **如果已用 `fix-email-service.sh` 破坏了 SSL，恢复方法：**
+
+```bash
+# 列出备份文件
+ls -la /etc/nginx/sites-available/omnitools.backup.*
+
+# 恢复最新备份（替换时间戳）
+sudo cp /etc/nginx/sites-available/omnitools.backup.1234567890 /etc/nginx/sites-available/omnitools
+
+# 然后运行正确的更新脚本
+sudo bash update-nginx-proxy.sh /etc/nginx/sites-available/omnitools
+```
 
 ### 手动更新
 
