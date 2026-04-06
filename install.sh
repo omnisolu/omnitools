@@ -104,7 +104,7 @@ systemctl restart omnitools-email
 
 # --- nginx 站点（SPA + API 代理）---
 log "配置 nginx 站点 ${NGINX_SITE}…"
-cat > "${NGINX_CONF}" <<'EOF'
+cat > "${NGINX_CONF}" <<EOF
 # ${APP_NAME} — 由 install.sh 生成
 upstream email_server {
     server 127.0.0.1:3001;
