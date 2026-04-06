@@ -14,6 +14,28 @@ function parseErrorMessage(body: string): string {
   }
 }
 
+export async function getSmtpSettings(): Promise<SmtpSettings | null> {
+  const res = await fetch(apiUrl("/api/smtp"));
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(parseErrorMessage(text));
+  }
+  const data = (await res.json()) as SmtpSettings | null;
+  return data;
+}
+
+export async function saveSmtpSettings(smtp: SmtpSettings): Promise<void> {
+  const res = await fetch(apiUrl("/api/smtp"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(smtp),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+}
+
 export async function sendExpensePdfEmail(options: {
   smtp: SmtpSettings;
   to: string;

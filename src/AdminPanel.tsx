@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
-import {
-  getAllReimbursementData,
-  getSmtpSettings,
-  saveSmtpSettings,
-  ReimbursementRecord,
-  ExpenseLineRecord,
-} from "./db";
+import { getAllReimbursementData, ReimbursementRecord, ExpenseLineRecord } from "./db";
 import type { SmtpSettings } from "./types";
-import { sendSmtpTestEmail } from "./emailApi";
+import { getSmtpSettings, saveSmtpSettings, sendSmtpTestEmail } from "./emailApi";
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -118,7 +112,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     try {
       await saveSmtpSettings(cfg);
       setSmtp(cfg);
-      setSmtpMessage("SMTP 已保存到本机浏览器。");
+      setSmtpMessage("SMTP 已保存到本地数据库（浏览器 IndexedDB）。");
     } catch (e) {
       setSmtpMessage((e as Error)?.message || "保存失败");
     } finally {
@@ -170,7 +164,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           浏览器无法直接连接 SMTP；开发时运行{" "}
           <code className="admin-code">npm run dev</code>{" "}
           会同时启动前端与邮件 API。SMTP
-          密码仅保存在本机 IndexedDB。生产环境建议由 Nginx 将{" "}
+          密码已保存到服务端 SQLite 并使用 AES 加密。生产环境建议由 Nginx 将{" "}
           <code className="admin-code">/api</code> 反代到该服务。
         </p>
         {smtpLoading ? (
