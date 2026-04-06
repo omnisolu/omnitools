@@ -104,7 +104,7 @@ systemctl restart omnitools-email
 
 # --- nginx 站点（SPA + API 代理）---
 log "配置 nginx 站点 ${NGINX_SITE}…"
-cat > "${NGINX_CONF}" <<EOF
+cat > "${NGINX_CONF}" <<'EOF'
 # ${APP_NAME} — 由 install.sh 生成
 upstream email_server {
     server 127.0.0.1:3001;
@@ -114,6 +114,9 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${SSL_DOMAIN:-_};
+
+    # 以下内容由 certbot 在启用 HTTPS 时自动更新
+    # 请勿手动编辑此部分
 
     root ${APP_DIR}/dist;
     index index.html;
@@ -172,6 +175,16 @@ if [[ -n "${SSL_DOMAIN}" ]]; then
   fi
 
   certbot "${certbot_args[@]}"
+  
+  # 验证 API 代理配置在 SSL 配置中也存在
+  log "验证 API 代理配置…"
+  if ! grep -q "location /api/" "${NGINX_CONF}"; then
+    log "⚠️  警告：API 代理配置在 SSL 修改后可能丢失，正在修复…"
+    # 在第一个非 SSL 的 location 块前添加 API 代理
+    sed -i '/location \/ {/i \    # API 代理\n    location \/api\/ {\n        proxy_pass http:\/\/email_server;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_buffering off;\n        proxy_request_buffering off;\n        client_max_body_size 100M;\n    }\n' "${NGINX_CONF}"
+    nginx -t && systemctl reload nginx
+  fi
+  
   systemctl reload nginx
 fi
 
