@@ -1,9 +1,15 @@
-import type { ExpenseLine, HeaderInfo } from "./types";
+import type { ExpenseLine, HeaderInfo, SmtpSettings } from "./types";
 
 const DB_NAME = "OmniToolsExpenseDb";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_REIMBURSEMENTS = "reimbursements";
 const STORE_EXPENSE_LINES = "expenseLines";
+const STORE_SETTINGS = "settings";
+
+interface SettingsRow {
+  key: string;
+  value: SmtpSettings;
+}
 
 export interface ReimbursementRecord {
   id: string;
@@ -42,6 +48,9 @@ function openDatabase(): Promise<IDBDatabase> {
         const store = db.createObjectStore(STORE_EXPENSE_LINES, { keyPath: "id" });
         store.createIndex("reimbursementId", "reimbursementId", { unique: false });
       }
+      if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
+        db.createObjectStore(STORE_SETTINGS, { keyPath: "key" });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -55,6 +64,13 @@ function transactionComplete(transaction: IDBTransaction): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error || new Error("IndexedDB transaction aborted"));
+  });
+}
+
+function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
 
@@ -104,11 +120,23 @@ export async function saveReimbursement(options: {
   db.close();
 }
 
-function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+export async function getSmtpSettings(): Promise<SmtpSettings | null> {
+  const db = await openDatabase();
+  const tx = db.transaction(STORE_SETTINGS, "readonly");
+  const store = tx.objectStore(STORE_SETTINGS);
+  const row = await promisifyRequest<SettingsRow | undefined>(store.get("smtp"));
+  await transactionComplete(tx);
+  db.close();
+  return row?.value ?? null;
+}
+
+export async function saveSmtpSettings(settings: SmtpSettings): Promise<void> {
+  const db = await openDatabase();
+  const tx = db.transaction(STORE_SETTINGS, "readwrite");
+  const row: SettingsRow = { key: "smtp", value: settings };
+  tx.objectStore(STORE_SETTINGS).put(row);
+  await transactionComplete(tx);
+  db.close();
 }
 
 export async function getAllReimbursementData(): Promise<

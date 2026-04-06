@@ -9,6 +9,20 @@ export interface HeaderInfo {
   periodTo: string;
 }
 
+/** 后台保存的 SMTP 配置（仅存于浏览器 IndexedDB，发送时由本机邮件服务使用） */
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  /** 465 通常为 true；587 多为 false（STARTTLS） */
+  secure: boolean;
+  user: string;
+  pass: string;
+  /** 发件人邮箱（显示为 From） */
+  fromEmail: string;
+  /** 默认收件人，可留空，发送时再填 */
+  defaultToEmail: string;
+}
+
 export interface ExpenseLine {
   id: string;
   date: string;

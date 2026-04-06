@@ -7,7 +7,8 @@ import { COMPANY_PRESETS } from "./company";
 import { COMMON_CURRENCY_CODES, normalizeCurrency } from "./currencies";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
-import { saveReimbursement } from "./db";
+import { getSmtpSettings, saveReimbursement } from "./db";
+import { sendExpensePdfEmail } from "./emailApi";
 import AdminPanel from "./AdminPanel";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
@@ -77,6 +78,7 @@ export default function App() {
     Map<string, string>
   >(() => new Map());
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [emailBusy, setEmailBusy] = useState(false);
 
   const formTemplateRef = useRef<HTMLDivElement>(null);
 
@@ -221,7 +223,7 @@ export default function App() {
     setPdfBusy(true);
     try {
       const bytes = await buildMergedReimbursementPdf(el, expenses);
-      const blob = new Blob([bytes], { type: "application/pdf" });
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -235,6 +237,48 @@ export default function App() {
       );
     } finally {
       setPdfBusy(false);
+    }
+  }
+
+  async function handleEmailMergedPdf() {
+    const smtp = await getSmtpSettings();
+    if (!smtp?.host?.trim()) {
+      window.alert("请先在「查看后台」中配置并保存 SMTP。");
+      return;
+    }
+    let to = smtp.defaultToEmail.trim();
+    if (!to) {
+      const entered = window.prompt("收件邮箱：");
+      if (entered === null) return;
+      to = entered.trim();
+      if (!to) {
+        window.alert("未填写收件邮箱。");
+        return;
+      }
+    }
+    const el = formTemplateRef.current;
+    if (!el) return;
+    setEmailBusy(true);
+    try {
+      const bytes = await buildMergedReimbursementPdf(el, expenses);
+      const baseName = header.employeeName.trim().replace(/\s+/g, "_") || "draft";
+      const filename = `Expense-Reimbursement-${baseName}.pdf`;
+      await sendExpensePdfEmail({
+        smtp,
+        to,
+        pdfBytes: bytes,
+        filename,
+        subject: `报销单 PDF - ${header.employeeName.trim() || "draft"}`,
+      });
+      window.alert("合并 PDF 已发送到邮箱。");
+    } catch (e) {
+      console.error(e);
+      window.alert(
+        (e as Error)?.message ||
+          "发送失败。请确认已用 npm run dev 启动（含邮件 API），并检查 SMTP 与网络。"
+      );
+    } finally {
+      setEmailBusy(false);
     }
   }
 
@@ -732,10 +776,18 @@ export default function App() {
             <button
               type="button"
               className="btn btn--primary"
-              disabled={pdfBusy}
+              disabled={pdfBusy || emailBusy}
               onClick={() => void handleDownloadMergedPdf()}
             >
               {pdfBusy ? "正在生成…" : "下载合并 PDF"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={pdfBusy || emailBusy}
+              onClick={() => void handleEmailMergedPdf()}
+            >
+              {emailBusy ? "正在发送…" : "发送 PDF 到邮箱"}
             </button>
             <button
               type="button"
