@@ -74,10 +74,42 @@ npm run build
 
 [[ -f "${APP_DIR}/dist/index.html" ]] || die "构建失败：未生成 dist/index.html"
 
-# --- nginx 站点（SPA）---
+# --- Email 服务（systemd 服务）---
+log "配置邮件服务 systemd…"
+cat > "/etc/systemd/system/omnitools-email.service" <<'SVCEOF'
+[Unit]
+Description=OmniTools Email Server
+After=network.target
+StartLimitInterval=200
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=${APP_DIR}
+ExecStart=/usr/bin/node server/send-mail.mjs
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+# 替换 ${APP_DIR} 占位符
+sed -i "s|\${APP_DIR}|${APP_DIR}|g" /etc/systemd/system/omnitools-email.service
+
+systemctl daemon-reload
+systemctl enable omnitools-email
+systemctl restart omnitools-email
+
+# --- nginx 站点（SPA + API 代理）---
 log "配置 nginx 站点 ${NGINX_SITE}…"
 cat > "${NGINX_CONF}" <<EOF
 # ${APP_NAME} — 由 install.sh 生成
+upstream email_server {
+    server 127.0.0.1:3001;
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -88,10 +120,27 @@ server {
 
     add_header X-Content-Type-Options nosniff always;
 
+    # API 代理
+    location /api/ {
+        proxy_pass http://email_server;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        client_max_body_size 100M;
+    }
+
+    # SPA 路由
     location / {
         try_files \$uri \$uri/ /index.html;
     }
 
+    # 静态资源缓存
     location ~* \\.(?:js|css|png|jpg|jpeg|gif|ico|svg|webp|woff2?)\$ {
         expires 7d;
         add_header Cache-Control "public, immutable";

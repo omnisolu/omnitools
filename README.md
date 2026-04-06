@@ -89,6 +89,39 @@ sudo npm run build
 sudo systemctl reload nginx
 ```
 
+## 邮件配置
+
+应用支持通过 SMTP 发送报销单。邮件服务器在后台自动运行。
+
+### 装置脚本自动配置
+
+使用 `install.sh` 部署时，邮件服务器将作为 systemd 服务自动启动：
+
+```bash
+# 检查服务状态
+sudo systemctl status omnitools-email
+
+# 查看日志
+sudo journalctl -u omnitools-email -f
+
+# 重启服务
+sudo systemctl restart omnitools-email
+```
+
+### 开发环境配置
+
+在开发环境中，邮件服务器需要单独启动：
+
+```bash
+npm run email-server
+```
+
+或同时运行前端和邮件服务器：
+
+```bash
+npm run dev
+```
+
 ## 浏览器数据库
 
 当前应用支持将报销数据保存到浏览器本地数据库（IndexedDB）。

@@ -53,8 +53,21 @@ else
 fi
 echo ""
 
-# Step 4: Reload Nginx
-echo "🔄 Step 4: Reloading Nginx..."
+# Step 4: Restart Email Service
+echo "📧 Step 4: Restarting Email Service..."
+if systemctl is-enabled omnitools-email >/dev/null 2>&1; then
+    if systemctl restart omnitools-email; then
+        echo "✅ Email service restarted successfully"
+    else
+        echo "⚠️  Failed to restart email service"
+    fi
+else
+    echo "⚠️  Email service not installed (omnitools-email)"
+fi
+echo ""
+
+# Step 5: Reload Nginx
+echo "🔄 Step 5: Reloading Nginx..."
 if systemctl reload nginx; then
     echo "✅ Nginx reloaded successfully"
 else
