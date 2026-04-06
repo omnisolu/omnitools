@@ -76,7 +76,24 @@ sudo bash upgrade.sh
 1. 拉取最新代码
 2. 安装依赖
 3. 构建前端
-4. 重启 Nginx
+4. 重启邮件服务
+5. 重启 Nginx
+
+### 修复已安装系统
+
+如果已经部署了旧版本（邮件功能不可用），使用修复脚本快速升级：
+
+```bash
+cd /path/to/omnitools
+sudo bash fix-email-service.sh
+```
+
+此脚本会：
+1. 拉取最新代码
+2. 配置邮件服务 systemd
+3. 启动邮件服务
+4. 更新 nginx 配置并应用 API 代理
+5. 验证所有配置
 
 ### 手动更新
 
