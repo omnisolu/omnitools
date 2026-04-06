@@ -7,7 +7,8 @@ import { COMPANY_PRESETS } from "./company";
 import { COMMON_CURRENCY_CODES, normalizeCurrency } from "./currencies";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
-import { saveReimbursement } from "./db";
+import { getSmtpSettings, saveReimbursement } from "./db";
+import { sendExpensePdfEmail } from "./emailApi";
 import AdminPanel from "./AdminPanel";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
@@ -77,6 +78,7 @@ export default function App() {
     Map<string, string>
   >(() => new Map());
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [emailBusy, setEmailBusy] = useState(false);
 
   const formTemplateRef = useRef<HTMLDivElement>(null);
 
@@ -221,7 +223,7 @@ export default function App() {
     setPdfBusy(true);
     try {
       const bytes = await buildMergedReimbursementPdf(el, expenses);
-      const blob = new Blob([bytes], { type: "application/pdf" });
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -235,6 +237,48 @@ export default function App() {
       );
     } finally {
       setPdfBusy(false);
+    }
+  }
+
+  async function handleEmailMergedPdf() {
+    const smtp = await getSmtpSettings();
+    if (!smtp?.host?.trim()) {
+      window.alert("请先在「查看后台」中配置并保存 SMTP。");
+      return;
+    }
+    let to = smtp.defaultToEmail.trim();
+    if (!to) {
+      const entered = window.prompt("收件邮箱：");
+      if (entered === null) return;
+      to = entered.trim();
+      if (!to) {
+        window.alert("未填写收件邮箱。");
+        return;
+      }
+    }
+    const el = formTemplateRef.current;
+    if (!el) return;
+    setEmailBusy(true);
+    try {
+      const bytes = await buildMergedReimbursementPdf(el, expenses);
+      const baseName = header.employeeName.trim().replace(/\s+/g, "_") || "draft";
+      const filename = `Expense-Reimbursement-${baseName}.pdf`;
+      await sendExpensePdfEmail({
+        smtp,
+        to,
+        pdfBytes: bytes,
+        filename,
+        subject: `报销单 PDF - ${header.employeeName.trim() || "draft"}`,
+      });
+      window.alert("合并 PDF 已发送到邮箱。");
+    } catch (e) {
+      console.error(e);
+      window.alert(
+        (e as Error)?.message ||
+          "发送失败。请确认已用 npm run dev 启动（含邮件 API），并检查 SMTP 与网络。"
+      );
+    } finally {
+      setEmailBusy(false);
     }
   }
 
@@ -284,20 +328,37 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header no-print">
-        <div>
-          <h1 className="app-title">Expense Reimbursement Form</h1>
-          <p className="app-sub">费用报销单</p>
+      <nav className="app-menubar no-print" aria-label="主导航">
+        <div className="app-menubar-inner">
+          <div className="app-menubar-segment app-menubar-segment--left">
+            <span className="app-menubar-logo">OmniTools</span>
+            <span className="app-menubar-tag">
+              {isAdminView ? "后台" : "报销"}
+            </span>
+          </div>
+          <div className="app-menubar-segment app-menubar-segment--right">
+            <span className="app-menubar-company" title={header.companyName.trim() || undefined}>
+              {header.companyName.trim() || "—"}
+            </span>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm app-menubar-admin"
+              onClick={handleAdminToggle}
+            >
+              {isAuthenticated ? (isAdminView ? "返回报销" : "查看后台") : "查看后台"}
+            </button>
+          </div>
         </div>
-        <div className="app-header-right">
-          <div className="app-brand">{header.companyName.trim() || "—"}</div>
-          <button
-            type="button"
-            className="btn btn--ghost app-admin-toggle"
-            onClick={handleAdminToggle}
-          >
-            {isAuthenticated ? (isAdminView ? "返回报销" : "查看后台") : "查看后台"}
-          </button>
+      </nav>
+
+      <header className="app-header no-print">
+        <div className="app-header-titles">
+          <h1 className="app-title">
+            {isAdminView ? "后台管理" : "Expense Reimbursement Form"}
+          </h1>
+          <p className="app-sub">
+            {isAdminView ? "SMTP 与已保存记录" : "费用报销单"}
+          </p>
         </div>
       </header>
 
@@ -732,10 +793,18 @@ export default function App() {
             <button
               type="button"
               className="btn btn--primary"
-              disabled={pdfBusy}
+              disabled={pdfBusy || emailBusy}
               onClick={() => void handleDownloadMergedPdf()}
             >
               {pdfBusy ? "正在生成…" : "下载合并 PDF"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              disabled={pdfBusy || emailBusy}
+              onClick={() => void handleEmailMergedPdf()}
+            >
+              {emailBusy ? "正在发送…" : "发送 PDF 到邮箱"}
             </button>
             <button
               type="button"
