@@ -14,6 +14,13 @@ import {
   loadSmtpSettings,
   saveSmtpSettings,
   resolveSmtpMerge,
+  getFormPresetsForApi,
+  listCompanyPresetsForApi,
+  listExpenseCategoryPresetsForApi,
+  createCompanyPreset,
+  createExpenseCategoryPreset,
+  updateCompanyPreset,
+  updateExpenseCategoryPreset,
 } from "./expense-sqlite.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -78,9 +85,47 @@ function validateSmtp(smtp) {
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+/** 与 expense-sqlite 中 allocateNextReimbursementCode 一致 */
+const REIMBURSEMENT_ID_RE = /^EXP\d{6}$/;
+
+function resolvedMergedPdfPath(id) {
+  if (!id || typeof id !== "string" || !REIMBURSEMENT_ID_RE.test(id)) {
+    return null;
+  }
+  const resolved = path.resolve(UPLOAD_DIR, id, "merged.pdf");
+  const uploadRoot = path.resolve(UPLOAD_DIR);
+  const rel = path.relative(uploadRoot, resolved);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  return resolved;
+}
+
+/** 磁盘文件名：保留多语种 Unicode，仅去掉路径与非法字符 */
 function sanitizeFilename(name) {
-  const base = (name || "file").replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const raw = (name || "file").trim() || "file";
+  const base = raw
+    .replace(/[/\\:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/^\.+/, "");
   return base.slice(0, 180) || "file";
+}
+
+/**
+ * multipart 里 filename 常被误当成 latin1；若整串字节恰好是合法 UTF-8，则还原为 Unicode。
+ * 含 BMP 以外字符时视为已正确解析，不再转换。
+ */
+function normalizeMultipartOriginalFilename(name) {
+  if (!name || typeof name !== "string") return name || "file";
+  for (let i = 0; i < name.length; i++) {
+    if (name.charCodeAt(i) > 255) return name;
+  }
+  const buf = Buffer.from(name, "latin1");
+  const decoded = buf.toString("utf8");
+  try {
+    const reencoded = Buffer.from(decoded, "utf8");
+    if (reencoded.equals(buf)) return decoded;
+  } catch {
+    /* ignore */
+  }
+  return name;
 }
 
 function validateSubmitManifest(manifest, attachmentCount) {
@@ -103,6 +148,12 @@ function validateSubmitManifest(manifest, attachmentCount) {
   }
   if (sum !== attachmentCount) {
     return `附件数量（${attachmentCount}）与明细 manifest 不一致（期望 ${sum}）`;
+  }
+  const names = manifest.attachmentFilenames;
+  if (Array.isArray(names)) {
+    if (names.length !== attachmentCount) {
+      return `attachmentFilenames 数量（${names.length}）与附件数（${attachmentCount}）不一致`;
+    }
   }
   return null;
 }
@@ -215,15 +266,26 @@ app.post(
       await fsPromises.mkdir(dir, { recursive: true });
       await fsPromises.writeFile(path.join(dir, "merged.pdf"), pdfPart.buffer);
 
+      const manifestNames = Array.isArray(manifest.attachmentFilenames)
+        ? manifest.attachmentFilenames
+        : null;
       const receiptFiles = [];
       for (let i = 0; i < attachmentParts.length; i++) {
         const f = attachmentParts[i];
-        const safe = sanitizeFilename(f.originalname);
+        const fromManifest =
+          manifestNames &&
+          typeof manifestNames[i] === "string" &&
+          manifestNames[i].trim() !== ""
+            ? manifestNames[i].trim()
+            : null;
+        const originalLabel =
+          fromManifest ?? normalizeMultipartOriginalFilename(f.originalname || "");
+        const safe = sanitizeFilename(originalLabel);
         const fname = `receipt-${String(i + 1).padStart(3, "0")}-${safe}`;
         await fsPromises.writeFile(path.join(dir, fname), f.buffer);
         receiptFiles.push({
           storedFilename: fname,
-          originalFilename: f.originalname || fname,
+          originalFilename: originalLabel || fname,
         });
       }
 
@@ -265,6 +327,28 @@ app.post(
   }
 );
 
+/** 后台查看已保存的合并报销 PDF（upload 下各编号目录中的 merged.pdf） */
+app.get("/api/reimbursements/:id/merged-pdf", async (req, res) => {
+  const abs = resolvedMergedPdfPath(req.params.id);
+  if (!abs) {
+    res.status(400).json({ error: "无效报销编号" });
+    return;
+  }
+  try {
+    await fsPromises.access(abs, fs.constants.R_OK);
+  } catch {
+    res.status(404).json({ error: "未找到合并 PDF" });
+    return;
+  }
+  const safeName = `${req.params.id}-merged.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="${safeName}"`
+  );
+  fs.createReadStream(abs).pipe(res);
+});
+
 app.get("/api/reimbursements", (_req, res) => {
   try {
     const list = getAllReimbursementsForApi(expenseDb);
@@ -272,6 +356,97 @@ app.get("/api/reimbursements", (_req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+/** 报销表单下拉：仅启用的公司与类别 */
+app.get("/api/form-presets", (_req, res) => {
+  try {
+    const presets = getFormPresetsForApi(expenseDb);
+    res.json({ ok: true, ...presets });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+app.get("/api/profile/companies", (_req, res) => {
+  try {
+    const items = listCompanyPresetsForApi(expenseDb);
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+app.post("/api/profile/companies", (req, res) => {
+  try {
+    const name = req.body?.name;
+    createCompanyPreset(expenseDb, name);
+    res.json({ ok: true, items: listCompanyPresetsForApi(expenseDb) });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "保存失败" });
+  }
+});
+
+app.patch("/api/profile/companies/:id", (req, res) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "无效 id" });
+      return;
+    }
+    const body = req.body || {};
+    const patch = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.active !== undefined) patch.active = Boolean(body.active);
+    updateCompanyPreset(expenseDb, id, patch);
+    res.json({ ok: true, items: listCompanyPresetsForApi(expenseDb) });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "更新失败" });
+  }
+});
+
+app.get("/api/profile/expense-categories", (_req, res) => {
+  try {
+    const items = listExpenseCategoryPresetsForApi(expenseDb);
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+app.post("/api/profile/expense-categories", (req, res) => {
+  try {
+    const name = req.body?.name;
+    createExpenseCategoryPreset(expenseDb, name);
+    res.json({ ok: true, items: listExpenseCategoryPresetsForApi(expenseDb) });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "保存失败" });
+  }
+});
+
+app.patch("/api/profile/expense-categories/:id", (req, res) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "无效 id" });
+      return;
+    }
+    const body = req.body || {};
+    const patch = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.active !== undefined) patch.active = Boolean(body.active);
+    updateExpenseCategoryPreset(expenseDb, id, patch);
+    res.json({ ok: true, items: listExpenseCategoryPresetsForApi(expenseDb) });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "更新失败" });
   }
 });
 

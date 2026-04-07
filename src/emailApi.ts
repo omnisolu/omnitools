@@ -127,6 +127,8 @@ export interface SubmitReimbursementManifest {
   cashAdvance: number;
   managerName: string;
   businessPurpose: string;
+  /** 与 FormData 中 attachments 顺序一致，用于避免 multipart 文件名编码被错误解析 */
+  attachmentFilenames: string[];
   lines: Array<{
     expenseLineId: string;
     date: string;
@@ -176,6 +178,159 @@ export async function submitExpenseReimbursementToServer(options: {
     throw new Error("服务器未返回报销编号。");
   }
   return { reimbursementId: j.reimbursementId };
+}
+
+/** 浏览器打开：已保存的合并 PDF（inline），需邮件 API 与 Nginx /api 反代可用 */
+export function reimbursementMergedPdfUrl(reimbursementId: string): string {
+  return apiUrl(
+    `/api/reimbursements/${encodeURIComponent(reimbursementId)}/merged-pdf`
+  );
+}
+
+export interface ProfilePresetRow {
+  id: number;
+  name: string;
+  sortOrder: number;
+  /** 1 = 启用，0 = 停用 */
+  active: number;
+}
+
+export async function fetchFormPresets(): Promise<{
+  companies: string[];
+  categories: string[];
+}> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/form-presets"),
+    undefined,
+    FETCH_TIMEOUT_MS,
+    "加载表单选项"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{
+    companies?: string[];
+    categories?: string[];
+  }>(text, "加载表单选项");
+  return {
+    companies: j.companies ?? [],
+    categories: j.categories ?? [],
+  };
+}
+
+export async function fetchProfileCompanies(): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/profile/companies"),
+    undefined,
+    FETCH_TIMEOUT_MS,
+    "加载公司列表"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "加载公司列表");
+  return j.items ?? [];
+}
+
+export async function createProfileCompany(name: string): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/profile/companies"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    FETCH_TIMEOUT_MS,
+    "添加公司"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "添加公司");
+  return j.items ?? [];
+}
+
+export async function patchProfileCompany(
+  id: number,
+  patch: { name?: string; active?: boolean }
+): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl(`/api/profile/companies/${encodeURIComponent(String(id))}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    FETCH_TIMEOUT_MS,
+    "更新公司"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "更新公司");
+  return j.items ?? [];
+}
+
+export async function fetchProfileExpenseCategories(): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/profile/expense-categories"),
+    undefined,
+    FETCH_TIMEOUT_MS,
+    "加载费用类别"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "加载费用类别");
+  return j.items ?? [];
+}
+
+export async function createProfileExpenseCategory(
+  name: string
+): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/profile/expense-categories"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    FETCH_TIMEOUT_MS,
+    "添加费用类别"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "添加费用类别");
+  return j.items ?? [];
+}
+
+export async function patchProfileExpenseCategory(
+  id: number,
+  patch: { name?: string; active?: boolean }
+): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl(`/api/profile/expense-categories/${encodeURIComponent(String(id))}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    FETCH_TIMEOUT_MS,
+    "更新费用类别"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "更新费用类别");
+  return j.items ?? [];
 }
 
 export async function fetchReimbursementsFromServer(): Promise<

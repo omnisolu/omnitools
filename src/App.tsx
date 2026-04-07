@@ -12,6 +12,7 @@ import {
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
 import {
+  fetchFormPresets,
   getSmtpSettings,
   sendExpensePdfEmail,
   submitExpenseReimbursementToServer,
@@ -69,6 +70,12 @@ export default function App() {
   const [isAdminView, setIsAdminView] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [header, setHeader] = useState<HeaderInfo>(emptyHeader);
+  const [companyPresets, setCompanyPresets] = useState<string[]>(() => [
+    ...COMPANY_PRESETS,
+  ]);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>(() => [
+    ...EXPENSE_CATEGORIES,
+  ]);
   /** 基准币种：选「其他」时保持下拉为「其他」分支 */
   const [baseCurrencyPickCustom, setBaseCurrencyPickCustom] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseLine[]>([]);
@@ -104,6 +111,20 @@ export default function App() {
   >(null);
 
   const formTemplateRef = useRef<HTMLDivElement>(null);
+
+  const loadFormPresets = useCallback(async () => {
+    try {
+      const p = await fetchFormPresets();
+      setCompanyPresets(p.companies);
+      setExpenseCategories(p.categories);
+    } catch {
+      /* API 未就绪时保留内置列表 */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadFormPresets();
+  }, [loadFormPresets]);
 
   const headerValid = useMemo(() => {
     const {
@@ -533,6 +554,9 @@ export default function App() {
           cashAdvance: cashAdvanceNum,
           managerName,
           businessPurpose,
+          attachmentFilenames: expenses.flatMap((e) =>
+            e.files.map((f) => f.name)
+          ),
           lines: expenses.map((e) => ({
             expenseLineId: e.id,
             date: e.date,
@@ -622,7 +646,10 @@ export default function App() {
       </header>
 
       {isAdminView ? (
-        <AdminPanel onClose={() => setIsAdminView(false)} />
+        <AdminPanel
+          onClose={() => setIsAdminView(false)}
+          onFormPresetsChanged={loadFormPresets}
+        />
       ) : (
         <main className="app-main">
         {confirmOpen ? (
@@ -803,7 +830,7 @@ export default function App() {
                   请填写姓名、部门、公司、<strong>基准币种</strong>与报销期间。合计与结算均以基准币种为准。
                 </p>
                 <datalist id="company-presets">
-                  {COMPANY_PRESETS.map((name) => (
+                  {companyPresets.map((name) => (
                     <option key={name} value={name} />
                   ))}
                 </datalist>
@@ -994,7 +1021,7 @@ export default function App() {
                         onChange={(e) => setLineCategory(e.target.value)}
                       >
                         <option value="">请选择</option>
-                        {EXPENSE_CATEGORIES.map((c) => (
+                        {expenseCategories.map((c) => (
                           <option key={c} value={c}>
                             {c}
                           </option>

@@ -4,12 +4,16 @@ import type { SmtpSettings } from "./types";
 import {
   fetchReimbursementsFromServer,
   getSmtpSettings,
+  reimbursementMergedPdfUrl,
   saveSmtpSettings,
   sendSmtpTestEmail,
 } from "./emailApi";
+import ProfileSettings from "./ProfileSettings";
 
 interface AdminPanelProps {
   onClose: () => void;
+  /** 公司/类别变更后刷新报销页下拉 */
+  onFormPresetsChanged?: () => void;
 }
 
 interface ReimbursementWithExpenses {
@@ -44,7 +48,10 @@ function smtpFromFormState(s: SmtpSettings): SmtpSettings {
   };
 }
 
-export default function AdminPanel({ onClose }: AdminPanelProps) {
+export default function AdminPanel({
+  onClose,
+  onFormPresetsChanged,
+}: AdminPanelProps) {
   const [records, setRecords] = useState<ReimbursementWithExpenses[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +63,9 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [smtpMessage, setSmtpMessage] = useState<string | null>(null);
   const [smtpSaveBusy, setSmtpSaveBusy] = useState(false);
   const [smtpTestBusy, setSmtpTestBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<"report" | "smtp">("report");
+  const [activeTab, setActiveTab] = useState<"report" | "smtp" | "profile">(
+    "report"
+  );
 
   useEffect(() => {
     let canceled = false;
@@ -167,8 +176,6 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     }
   }
 
-  const isReportTab = activeTab === "report";
-
   const reportView = (
     <>
       {!smtpLoading && !smtpConfigured ? (
@@ -186,11 +193,23 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         records.map(({ reimbursement, expenses }) => (
           <div key={reimbursement.id} className="admin-record">
             <div className="admin-record-header">
-              <div>
-                <p className="admin-record-meta">
-                  提交时间：{formatDate(reimbursement.createdAt)}
-                </p>
-                <h3 className="admin-record-title">{reimbursement.header.employeeName} 的报销单</h3>
+              <div className="admin-record-header-row">
+                <div>
+                  <p className="admin-record-meta">
+                    提交时间：{formatDate(reimbursement.createdAt)}
+                  </p>
+                  <h3 className="admin-record-title">
+                    {reimbursement.header.employeeName} 的报销单
+                  </h3>
+                </div>
+                <a
+                  className="btn btn--primary btn--sm admin-record-pdf-link"
+                  href={reimbursementMergedPdfUrl(reimbursement.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  查看合并 PDF
+                </a>
               </div>
               <div className="admin-record-summary">
                 <span>{reimbursement.header.department}</span>
@@ -390,35 +409,56 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         <div className="admin-sidebar-title">管理菜单</div>
         <button
           type="button"
-          className={`admin-sidebar-button ${isReportTab ? "active" : ""}`}
+          className={`admin-sidebar-button ${activeTab === "report" ? "active" : ""}`}
           onClick={() => setActiveTab("report")}
         >
           Expense Reim Report
         </button>
         <button
           type="button"
-          className={`admin-sidebar-button ${!isReportTab ? "active" : ""}`}
+          className={`admin-sidebar-button ${activeTab === "smtp" ? "active" : ""}`}
           onClick={() => setActiveTab("smtp")}
         >
           SMTP 设置
+        </button>
+        <button
+          type="button"
+          className={`admin-sidebar-button ${activeTab === "profile" ? "active" : ""}`}
+          onClick={() => setActiveTab("profile")}
+        >
+          Profile Setting
         </button>
       </aside>
       <div className="admin-main">
         <section className="card admin-main-card">
           <div className="admin-header admin-main-header">
             <div>
-              <h2 className="card-title">{isReportTab ? "后台提交记录" : "SMTP 设置"}</h2>
+              <h2 className="card-title">
+                {activeTab === "report"
+                  ? "后台提交记录"
+                  : activeTab === "smtp"
+                    ? "SMTP 设置"
+                    : "Profile Setting"}
+              </h2>
               <p className="card-hint">
-                {isReportTab
+                {activeTab === "report"
                   ? "查看已提交到服务端 SQLite 的报销单及明细。"
-                  : "配置 SMTP 后可将合并 PDF 发到邮箱。"}
+                  : activeTab === "smtp"
+                    ? "配置 SMTP 后可将合并 PDF 发到邮箱。"
+                    : "维护公司列表与费用类别；启用项会出现在报销表单的下拉中。"}
               </p>
             </div>
             <button type="button" className="btn btn--ghost" onClick={onClose}>
               返回报销表单
             </button>
           </div>
-          {isReportTab ? reportView : smtpView}
+          {activeTab === "report"
+            ? reportView
+            : activeTab === "smtp"
+              ? smtpView
+              : (
+                  <ProfileSettings onFormPresetsChanged={onFormPresetsChanged} />
+                )}
         </section>
       </div>
     </section>

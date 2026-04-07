@@ -113,9 +113,241 @@ export function createExpenseDb(rootDir) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS company_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS expense_category_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_presets_sort ON company_presets(sort_order, id);
+    CREATE INDEX IF NOT EXISTS idx_exp_cat_presets_sort ON expense_category_presets(sort_order, id);
   `);
   migrateLegacySmtpIfNeeded(db, rootDir);
+  seedProfilePresetsIfEmpty(db);
   return { db, dbPath };
+}
+
+/** 与 src/company.ts、src/categories.ts 初始列表一致，仅在表为空时写入 */
+const DEFAULT_COMPANY_PRESETS = ["Omnisolu", "Metablox"];
+
+const DEFAULT_EXPENSE_CATEGORY_PRESETS = [
+  "Advertising",
+  "Bank fee",
+  "Purchase",
+  "AP-VENDOR",
+  "subcontractor-labour",
+  "Business Meals",
+  "Dues",
+  "IT Hosting fee",
+  "Fuel",
+  "Accounting & Legal Fees",
+  "License Fees",
+  "Marketing",
+  "Office Supplies",
+  "Packing & Freight",
+  "Passport fee",
+  "Courier & Postage",
+  "Printer Cartridges",
+  "Printer Paper",
+  "Computer Expenses",
+  "Computer equipment",
+  "Telephones",
+  "Tools",
+  "Training Fees",
+  "Travel",
+  "Other",
+];
+
+function seedProfilePresetsIfEmpty(db) {
+  const nc = db.prepare(`SELECT COUNT(*) AS c FROM company_presets`).get().c;
+  if (nc === 0) {
+    const ins = db.prepare(
+      `INSERT INTO company_presets (name, sort_order, active) VALUES (?, ?, 1)`
+    );
+    DEFAULT_COMPANY_PRESETS.forEach((name, i) => ins.run(name, i));
+  }
+  const nk = db.prepare(`SELECT COUNT(*) AS c FROM expense_category_presets`).get().c;
+  if (nk === 0) {
+    const ins = db.prepare(
+      `INSERT INTO expense_category_presets (name, sort_order, active) VALUES (?, ?, 1)`
+    );
+    DEFAULT_EXPENSE_CATEGORY_PRESETS.forEach((name, i) => ins.run(name, i));
+  }
+}
+
+function normName(s) {
+  return String(s ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {"company" | "category"} kind
+ * @param {string} name
+ * @param {number} [excludeId]
+ */
+function activeNameExists(db, kind, name, excludeId) {
+  const n = normName(name);
+  if (!n) return false;
+  const table = kind === "company" ? "company_presets" : "expense_category_presets";
+  const row = db
+    .prepare(
+      `SELECT id FROM ${table} WHERE active = 1 AND lower(name) = lower(?) AND id != ?`
+    )
+    .get(n, excludeId ?? -1);
+  return Boolean(row);
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ */
+export function getFormPresetsForApi(db) {
+  const companies = db
+    .prepare(
+      `SELECT name FROM company_presets WHERE active = 1 ORDER BY sort_order ASC, id ASC`
+    )
+    .all()
+    .map((r) => r.name);
+  const categories = db
+    .prepare(
+      `SELECT name FROM expense_category_presets WHERE active = 1 ORDER BY sort_order ASC, id ASC`
+    )
+    .all()
+    .map((r) => r.name);
+  return { companies, categories };
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ */
+export function listCompanyPresetsForApi(db) {
+  return db
+    .prepare(
+      `SELECT id, name, sort_order AS sortOrder, active FROM company_presets ORDER BY sort_order ASC, id ASC`
+    )
+    .all();
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ */
+export function listExpenseCategoryPresetsForApi(db) {
+  return db
+    .prepare(
+      `SELECT id, name, sort_order AS sortOrder, active FROM expense_category_presets ORDER BY sort_order ASC, id ASC`
+    )
+    .all();
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {string} name
+ */
+export function createCompanyPreset(db, name) {
+  const n = normName(name);
+  if (!n) throw new Error("公司名不能为空");
+  if (n.length > 200) throw new Error("公司名过长");
+  if (activeNameExists(db, "company", n)) throw new Error("已存在同名的启用公司");
+  const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM company_presets`).get();
+  const sortOrder = (maxRow?.m ?? -1) + 1;
+  const r = db
+    .prepare(`INSERT INTO company_presets (name, sort_order, active) VALUES (?, ?, 1)`)
+    .run(n, sortOrder);
+  return r.lastInsertRowid;
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {string} name
+ */
+export function createExpenseCategoryPreset(db, name) {
+  const n = normName(name);
+  if (!n) throw new Error("类别名不能为空");
+  if (n.length > 200) throw new Error("类别名过长");
+  if (activeNameExists(db, "category", n)) throw new Error("已存在同名的启用类别");
+  const maxRow = db
+    .prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM expense_category_presets`)
+    .get();
+  const sortOrder = (maxRow?.m ?? -1) + 1;
+  const r = db
+    .prepare(`INSERT INTO expense_category_presets (name, sort_order, active) VALUES (?, ?, 1)`)
+    .run(n, sortOrder);
+  return r.lastInsertRowid;
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {number} id
+ * @param {{ name?: string, active?: boolean }} patch
+ */
+export function updateCompanyPreset(db, id, patch) {
+  const row = db.prepare(`SELECT id, name, active FROM company_presets WHERE id = ?`).get(id);
+  if (!row) throw new Error("记录不存在");
+  let name = row.name;
+  let active = row.active;
+  if (patch.name !== undefined) {
+    const n = normName(patch.name);
+    if (!n) throw new Error("公司名不能为空");
+    if (n.length > 200) throw new Error("公司名过长");
+    if (active === 1 || patch.active === true) {
+      if (activeNameExists(db, "company", n, id)) throw new Error("已存在同名的启用公司");
+    }
+    name = n;
+  }
+  if (patch.active !== undefined) {
+    const next = patch.active ? 1 : 0;
+    if (next === 1) {
+      if (activeNameExists(db, "company", name, id)) throw new Error("已存在同名的启用公司");
+    }
+    active = next;
+  }
+  db.prepare(`UPDATE company_presets SET name = ?, active = ? WHERE id = ?`).run(
+    name,
+    active,
+    id
+  );
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {number} id
+ * @param {{ name?: string, active?: boolean }} patch
+ */
+export function updateExpenseCategoryPreset(db, id, patch) {
+  const row = db
+    .prepare(`SELECT id, name, active FROM expense_category_presets WHERE id = ?`)
+    .get(id);
+  if (!row) throw new Error("记录不存在");
+  let name = row.name;
+  let active = row.active;
+  if (patch.name !== undefined) {
+    const n = normName(patch.name);
+    if (!n) throw new Error("类别名不能为空");
+    if (n.length > 200) throw new Error("类别名过长");
+    if (active === 1 || patch.active === true) {
+      if (activeNameExists(db, "category", n, id)) throw new Error("已存在同名的启用类别");
+    }
+    name = n;
+  }
+  if (patch.active !== undefined) {
+    const next = patch.active ? 1 : 0;
+    if (next === 1) {
+      if (activeNameExists(db, "category", name, id)) throw new Error("已存在同名的启用类别");
+    }
+    active = next;
+  }
+  db.prepare(`UPDATE expense_category_presets SET name = ?, active = ? WHERE id = ?`).run(
+    name,
+    active,
+    id
+  );
 }
 
 /**
