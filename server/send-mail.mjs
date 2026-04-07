@@ -37,6 +37,12 @@ function saveDatabase(db) {
 
 const db = openDatabase();
 db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+// 修复旧数据中 value 为空的设置，避免后续读取和写入失败
+try {
+  db.run("DELETE FROM settings WHERE value IS NULL OR value = ''");
+} catch (err) {
+  console.error("Failed to clean old settings rows:", err);
+}
 saveDatabase(db);
 
 function encryptText(value) {
@@ -80,7 +86,8 @@ function getSetting(key) {
 function saveSetting(key, value) {
   const db = openDatabase();
   const stmt = db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)");
-  stmt.run(key, JSON.stringify(value));
+  const jsonValue = value === undefined ? "{}" : JSON.stringify(value);
+  stmt.run(key, jsonValue);
   saveDatabase(db);
   db.close();
 }
