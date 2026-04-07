@@ -44,6 +44,10 @@ function randomId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function fileKey(f: File): string {
+  return `${f.name}|${f.size}|${f.lastModified}`;
+}
+
 const emptyHeader: HeaderInfo = {
   employeeName: "",
   department: "",
@@ -126,7 +130,8 @@ export default function App() {
     lineFiles.length > 0 &&
     lineFiles.every((f) => isAllowedAttachment(f));
 
-  const canFinish = expenses.length > 0;
+  const canFinish =
+    expenses.length > 0 && expenses.every((e) => e.files.length > 0);
 
   const totals = useMemo(() => {
     const subtotalBase = expenses.reduce(
@@ -166,8 +171,12 @@ export default function App() {
 
   function goNextStep() {
     if (!headerValid) return;
-    setLineCurrency(normalizeCurrency(header.baseCurrency));
-    setLineExchangeRate("1");
+    // 从步骤 1 再次进入步骤 2 时，保留已填写中的币种与汇率（避免「上一个」改表头后点「下一个」被重置）
+    setLineCurrency((prev) => {
+      const t = prev.trim();
+      return t ? prev : normalizeCurrency(header.baseCurrency);
+    });
+    setLineExchangeRate((prev) => (prev.trim() === "" ? "1" : prev));
     setStep(2);
   }
 
@@ -216,6 +225,28 @@ export default function App() {
     setBlobUrlByExpenseId(new Map());
     setSubmittedReimbursementId(null);
     setConfirmOpen(false);
+  }
+
+  function removeLineFileAt(index: number) {
+    setLineFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileTick((k) => k + 1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeExpenseFile(expenseId: string, fileIndex: number) {
+    setExpenses((prev) =>
+      prev
+        .map((ex) => {
+          if (ex.id !== expenseId) return ex;
+          const nextFiles = ex.files.filter((_, i) => i !== fileIndex);
+          return { ...ex, files: nextFiles };
+        })
+        .filter((ex) => ex.files.length > 0)
+    );
+  }
+
+  function removeExpenseRow(expenseId: string) {
+    setExpenses((prev) => prev.filter((e) => e.id !== expenseId));
   }
 
   function handleFinish() {
@@ -610,7 +641,12 @@ export default function App() {
                   <p className="card-hint">
                     GST、总金额为<strong>本行币种</strong>金额。汇率表示：基准金额 = 本行金额 ×
                     汇率（1 单位本行币种兑多少{normalizeCurrency(header.baseCurrency) || "基准"}）。
-                    每条至少上传一个附件（可一次选多个文件）；信息齐全后「下一个」才可点。
+                    每条至少上传一个附件（可多次「选择文件」追加）；信息齐全后「下一个」才可点。
+                  </p>
+                  <p className="card-hint card-hint--sub">
+                    未点击「完成」并提交到服务器前，附件仅保存在本浏览器内存中；关闭或刷新页面会丢失。
+                    成功提交后，服务器会将 PDF 与收据写入{" "}
+                    <code className="admin-code">upload/EXPYYMMXX/</code> 正式目录。
                   </p>
 
                   <div className="field-grid">
@@ -713,15 +749,38 @@ export default function App() {
                                 `仅支持图片或 PDF 文件。已跳过：${invalid.join("、")}`
                               );
                             }
-                            setLineFiles(valid);
-                            if (valid.length === 0) e.target.value = "";
+                            if (valid.length) {
+                              setLineFiles((prev) => {
+                                const seen = new Set(prev.map(fileKey));
+                                const next = [...prev];
+                                for (const f of valid) {
+                                  const k = fileKey(f);
+                                  if (!seen.has(k)) {
+                                    seen.add(k);
+                                    next.push(f);
+                                  }
+                                }
+                                return next;
+                              });
+                            }
+                            e.target.value = "";
                           }}
                         />
                         {lineFiles.length > 0 && (
-                          <ul className="file-name-list">
-                            {lineFiles.map((f) => (
-                              <li key={`${f.name}-${f.size}-${f.lastModified}`} className="file-name" title={f.name}>
-                                {f.name}
+                          <ul className="file-name-list file-chip-list">
+                            {lineFiles.map((f, idx) => (
+                              <li key={fileKey(f)} className="file-chip">
+                                <span className="file-chip-name" title={f.name}>
+                                  {f.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--sm file-chip-remove"
+                                  aria-label={`移除 ${f.name}`}
+                                  onClick={() => removeLineFileAt(idx)}
+                                >
+                                  移除
+                                </button>
                               </li>
                             ))}
                           </ul>
@@ -768,13 +827,30 @@ export default function App() {
                               <td className="num">
                                 {(e.grossAmount * e.exchangeRate).toFixed(2)}
                               </td>
-                              <td
-                                className="attach-cell"
-                                title={e.files.map((f) => f.name).join("\n")}
-                              >
-                                {e.files.length === 1
-                                  ? e.files[0].name
-                                  : `${e.files.length} 个文件`}
+                              <td className="attach-cell attach-cell--files">
+                                <ul className="attach-file-list">
+                                  {e.files.map((f, i) => (
+                                    <li key={`${e.id}-${i}-${fileKey(f)}`} className="attach-file-row">
+                                      <span className="attach-file-name" title={f.name}>
+                                        {f.name}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="btn btn--ghost btn--sm"
+                                        onClick={() => removeExpenseFile(e.id, i)}
+                                      >
+                                        删除
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--sm attach-row-delete"
+                                  onClick={() => removeExpenseRow(e.id)}
+                                >
+                                  删除本条明细
+                                </button>
                               </td>
                             </tr>
                           ))}

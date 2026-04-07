@@ -142,6 +142,13 @@
   font-size: 0.9rem;
 }
 
+.card-hint--sub {
+  margin-top: -0.35rem;
+  margin-bottom: 1.1rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .field-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -240,6 +247,35 @@
   white-space: nowrap;
 }
 
+.file-chip-list {
+  list-style: none;
+  padding-left: 0;
+  width: 100%;
+}
+
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  margin: 0.2rem 0;
+}
+
+.file-chip-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-chip-remove {
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem !important;
+  font-size: 0.78rem !important;
+}
+
 .table-wrap {
   margin-top: 1.25rem;
   overflow-x: auto;
@@ -273,6 +309,43 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.attach-cell--files {
+  max-width: min(22rem, 52vw);
+  white-space: normal;
+  vertical-align: top;
+}
+
+.attach-file-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attach-file-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.attach-file-row:last-of-type {
+  margin-bottom: 0.4rem;
+}
+
+.attach-file-name {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.attach-row-delete {
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.5rem !important;
+  font-size: 0.78rem !important;
 }
 
 .table-foot {
