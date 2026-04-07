@@ -6,6 +6,21 @@ function apiUrl(path: string): string {
 }
 
 function parseErrorMessage(body: string): string {
+  const text = body?.trim();
+  if (!text) {
+    return "请求失败";
+  }
+
+  if (text.startsWith("<")) {
+    if (/502 Bad Gateway/i.test(text)) {
+      return "邮件 API 返回 502。请检查后端邮件服务是否已启动，或 Nginx /api 代理是否异常。";
+    }
+    if (/504 Gateway Time-out/i.test(text) || /gateway timeout/i.test(text)) {
+      return "邮件 API 请求超时。请检查后端服务是否可访问。";
+    }
+    return "邮件 API 返回 HTML 错误页面，请检查后端服务或代理配置。";
+  }
+
   try {
     const j = JSON.parse(body) as { error?: string };
     return j.error || body;
