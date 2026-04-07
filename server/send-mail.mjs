@@ -71,7 +71,7 @@ function getSetting(key) {
   const stmt = db.prepare("SELECT value FROM settings WHERE key = ?");
   const row = stmt.get(key);
   db.close();
-  if (!row || row.value == null || row.value === "") {
+  if (!row || row.value == null || row.value === "" || row.value === "undefined") {
     return null;
   }
 
@@ -79,6 +79,15 @@ function getSetting(key) {
     return JSON.parse(row.value);
   } catch (err) {
     console.error(`Failed to parse stored setting for key=${key}:`, err);
+    try {
+      const cleanupDb = openDatabase();
+      const cleanupStmt = cleanupDb.prepare("DELETE FROM settings WHERE key = ?");
+      cleanupStmt.run(key);
+      saveDatabase(cleanupDb);
+      cleanupDb.close();
+    } catch (cleanupErr) {
+      console.error(`Failed to clean invalid stored setting for key=${key}:`, cleanupErr);
+    }
     return null;
   }
 }
@@ -159,12 +168,17 @@ app.use(cors());
 app.use(express.json({ limit: "512kb" }));
 
 app.get("/api/smtp", (req, res) => {
-  const smtp = loadSmtpSettings();
-  if (!smtp) {
-    res.json(null);
-    return;
+  try {
+    const smtp = loadSmtpSettings();
+    if (!smtp) {
+      res.json(null);
+      return;
+    }
+    res.json({ ...smtp, pass: "" });
+  } catch (err) {
+    console.error("GET /api/smtp failed:", err);
+    res.status(500).json({ error: "读取 SMTP 配置失败，请查看后端日志。" });
   }
-  res.json({ ...smtp, pass: "" });
 });
 
 app.post("/api/smtp", (req, res) => {
@@ -179,8 +193,14 @@ app.post("/api/smtp", (req, res) => {
     res.status(400).json({ error: errMsg });
     return;
   }
-  saveSmtpSettings(finalSettings);
-  res.json({ ok: true });
+
+  try {
+    saveSmtpSettings(finalSettings);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /api/smtp failed:", err);
+    res.status(500).json({ error: "保存 SMTP 配置失败，请检查后端日志。" });
+  }
 });
 
 app.post("/api/test-smtp", async (req, res) => {
