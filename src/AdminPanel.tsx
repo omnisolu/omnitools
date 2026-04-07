@@ -8,6 +8,8 @@ import {
   saveSmtpSettings,
   sendSmtpTestEmail,
 } from "./emailApi";
+import { normalizeCurrency } from "./currencies";
+import { formatIsoDateDisplay, formatIsoDateRange } from "./formatIsoDate";
 import ProfileSettings from "./ProfileSettings";
 
 interface AdminPanelProps {
@@ -40,6 +42,10 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString();
 }
 
+function totalBaseAmount(expenses: ExpenseLineRecord[]): number {
+  return expenses.reduce((s, e) => s + e.grossAmount * e.exchangeRate, 0);
+}
+
 function smtpFromFormState(s: SmtpSettings): SmtpSettings {
   const port = Number(s.port);
   return {
@@ -66,6 +72,8 @@ export default function AdminPanel({
   const [activeTab, setActiveTab] = useState<"report" | "smtp" | "profile">(
     "report"
   );
+  /** 报表列表中选中的报销单，null 表示显示列表 */
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     let canceled = false;
@@ -126,6 +134,12 @@ export default function AdminPanel({
     };
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== "report") {
+      setDetailId(null);
+    }
+  }, [activeTab]);
+
   function patchSmtp<K extends keyof SmtpSettings>(key: K, value: SmtpSettings[K]) {
     setSmtp((prev) => ({ ...prev, [key]: value }));
   }
@@ -176,6 +190,109 @@ export default function AdminPanel({
     }
   }
 
+  function renderReimbursementDetail({
+    reimbursement,
+    expenses,
+  }: ReimbursementWithExpenses) {
+    return (
+      <div className="admin-record">
+        <div className="admin-record-header">
+          <div className="admin-record-header-row">
+            <div>
+              <p className="admin-record-meta">
+                提交时间：{formatDate(reimbursement.createdAt)}
+              </p>
+              <h3 className="admin-record-title">
+                {reimbursement.header.employeeName} 的报销单
+              </h3>
+            </div>
+            <a
+              className="btn btn--primary btn--sm admin-record-pdf-link"
+              href={reimbursementMergedPdfUrl(reimbursement.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              查看合并 PDF
+            </a>
+          </div>
+          <div className="admin-record-summary">
+            <span>{reimbursement.header.department}</span>
+            <span>{reimbursement.header.companyName}</span>
+            <span>{reimbursement.header.baseCurrency}</span>
+          </div>
+        </div>
+
+        <div className="admin-fields">
+          <div className="admin-field">
+            <strong>编号</strong>
+            <span>{reimbursement.id}</span>
+          </div>
+          <div className="admin-field">
+            <strong>期间</strong>
+            <span>
+              {formatIsoDateRange(
+                reimbursement.header.periodFrom,
+                reimbursement.header.periodTo
+              )}
+            </span>
+          </div>
+          <div className="admin-field">
+            <strong>经理</strong>
+            <span>{reimbursement.managerName || "（未填写）"}</span>
+          </div>
+          <div className="admin-field">
+            <strong>预支抵扣</strong>
+            <span>
+              {formatMoney(
+                reimbursement.cashAdvance,
+                reimbursement.header.baseCurrency
+              )}
+            </span>
+          </div>
+          <div className="admin-field admin-field-full">
+            <strong>事由</strong>
+            <span>{reimbursement.businessPurpose || "（未填写）"}</span>
+          </div>
+        </div>
+
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>类别</th>
+                <th>说明</th>
+                <th>币种</th>
+                <th>汇率</th>
+                <th>含税金额</th>
+                <th>本位币</th>
+                <th>附件</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.map((expense) => (
+                <tr key={expense.id}>
+                  <td>{formatIsoDateDisplay(expense.date)}</td>
+                  <td>{expense.category}</td>
+                  <td>{expense.description}</td>
+                  <td>{expense.lineCurrency}</td>
+                  <td className="num">{expense.exchangeRate.toFixed(4)}</td>
+                  <td className="num">{expense.grossAmount.toFixed(2)}</td>
+                  <td className="num">
+                    {(expense.grossAmount * expense.exchangeRate).toFixed(2)}
+                  </td>
+                  <td>
+                    {expense.attachments.map((a) => a.fileName).join("； ")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   const reportView = (
     <>
       {!smtpLoading && !smtpConfigured ? (
@@ -189,94 +306,77 @@ export default function AdminPanel({
         <div className="admin-empty">读取失败：{error}</div>
       ) : records.length === 0 ? (
         <div className="admin-empty">当前尚未保存任何报销单。</div>
-      ) : (
-        records.map(({ reimbursement, expenses }) => (
-          <div key={reimbursement.id} className="admin-record">
-            <div className="admin-record-header">
-              <div className="admin-record-header-row">
-                <div>
-                  <p className="admin-record-meta">
-                    提交时间：{formatDate(reimbursement.createdAt)}
-                  </p>
-                  <h3 className="admin-record-title">
-                    {reimbursement.header.employeeName} 的报销单
-                  </h3>
-                </div>
-                <a
-                  className="btn btn--primary btn--sm admin-record-pdf-link"
-                  href={reimbursementMergedPdfUrl(reimbursement.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+      ) : detailId ? (
+        (() => {
+          const entry = records.find((r) => r.reimbursement.id === detailId);
+          if (!entry) {
+            return (
+              <div className="admin-empty">
+                <p>未找到该记录。</p>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => setDetailId(null)}
                 >
-                  查看合并 PDF
-                </a>
+                  返回列表
+                </button>
               </div>
-              <div className="admin-record-summary">
-                <span>{reimbursement.header.department}</span>
-                <span>{reimbursement.header.companyName}</span>
-                <span>{reimbursement.header.baseCurrency}</span>
+            );
+          }
+          return (
+            <>
+              <div className="admin-report-detail-toolbar">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => setDetailId(null)}
+                >
+                  返回列表
+                </button>
               </div>
-            </div>
-
-            <div className="admin-fields">
-              <div className="admin-field">
-                <strong>编号</strong>
-                <span>{reimbursement.id}</span>
-              </div>
-              <div className="admin-field">
-                <strong>期间</strong>
-                <span>
-                  {reimbursement.header.periodFrom} — {reimbursement.header.periodTo}
-                </span>
-              </div>
-              <div className="admin-field">
-                <strong>经理</strong>
-                <span>{reimbursement.managerName || "（未填写）"}</span>
-              </div>
-              <div className="admin-field">
-                <strong>预支抵扣</strong>
-                <span>{formatMoney(reimbursement.cashAdvance, reimbursement.header.baseCurrency)}</span>
-              </div>
-              <div className="admin-field admin-field-full">
-                <strong>事由</strong>
-                <span>{reimbursement.businessPurpose || "（未填写）"}</span>
-              </div>
-            </div>
-
-            <div className="table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>日期</th>
-                    <th>类别</th>
-                    <th>说明</th>
-                    <th>币种</th>
-                    <th>汇率</th>
-                    <th>含税金额</th>
-                    <th>本位币</th>
-                    <th>附件</th>
+              {renderReimbursementDetail(entry)}
+            </>
+          );
+        })()
+      ) : (
+        <div className="table-wrap">
+          <table className="admin-table admin-report-list">
+            <thead>
+              <tr>
+                <th>编号</th>
+                <th>提交人</th>
+                <th>币种</th>
+                <th className="num">金额</th>
+                <th className="admin-report-actions-col" aria-label="操作" />
+              </tr>
+            </thead>
+            <tbody>
+              {records.map(({ reimbursement, expenses }) => {
+                const base = normalizeCurrency(reimbursement.header.baseCurrency);
+                const total = totalBaseAmount(expenses);
+                return (
+                  <tr key={reimbursement.id}>
+                    <td>
+                      <code className="admin-code">{reimbursement.id}</code>
+                    </td>
+                    <td>{reimbursement.header.employeeName.trim() || "—"}</td>
+                    <td>{base || "—"}</td>
+                    <td className="num">{total.toFixed(2)}</td>
+                    <td className="admin-report-actions-cell">
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        onClick={() => setDetailId(reimbursement.id)}
+                      >
+                        VIEW
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {expenses.map((expense) => (
-                    <tr key={expense.id}>
-                      <td>{expense.date}</td>
-                      <td>{expense.category}</td>
-                      <td>{expense.description}</td>
-                      <td>{expense.lineCurrency}</td>
-                      <td className="num">{expense.exchangeRate.toFixed(4)}</td>
-                      <td className="num">{expense.grossAmount.toFixed(2)}</td>
-                      <td className="num">{(expense.grossAmount * expense.exchangeRate).toFixed(2)}</td>
-                      <td>
-                        {expense.attachments.map((a) => a.fileName).join("； ")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

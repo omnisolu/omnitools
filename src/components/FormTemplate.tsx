@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { currenciesMatch, normalizeCurrency } from "../currencies";
 import type { ExpenseLine, HeaderInfo } from "../types";
+import { formatIsoDateDisplay } from "../formatIsoDate";
 import "./FormTemplate.css";
 
 export interface FormTemplateProps {
@@ -11,13 +12,6 @@ export interface FormTemplateProps {
   managerName?: string;
   /** 提交后由服务器分配的编号 EXPYYMMXX */
   reimbursementCode?: string | null;
-}
-
-function formatDate(iso: string): string {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return iso;
-  return `${y}/${m}/${d}`;
 }
 
 function lineSubtotal(gross: number, gst: number): number {
@@ -76,11 +70,11 @@ const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
                 <div className="form-template__period-fields">
                   <div>
                     <span className="form-template__period-key">From:</span>{" "}
-                    {formatDate(header.periodFrom)}
+                    {formatIsoDateDisplay(header.periodFrom)}
                   </div>
                   <div>
                     <span className="form-template__period-key">To:</span>{" "}
-                    {formatDate(header.periodTo)}
+                    {formatIsoDateDisplay(header.periodTo)}
                   </div>
                 </div>
               </td>
@@ -176,7 +170,7 @@ const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
               const r = e.exchangeRate;
               return (
                 <tr key={e.id}>
-                  <td>{formatDate(e.date)}</td>
+                  <td>{formatIsoDateDisplay(e.date)}</td>
                   <td>{e.description}</td>
                   <td>{e.category}</td>
                   {showFx && (

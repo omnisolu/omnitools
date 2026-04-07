@@ -827,6 +827,24 @@
   color: var(--muted);
 }
 
+.admin-report-list {
+  width: 100%;
+}
+
+.admin-report-list .admin-report-actions-col {
+  width: 5.5rem;
+  text-align: right;
+}
+
+.admin-report-actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-report-detail-toolbar {
+  margin-bottom: 1rem;
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;

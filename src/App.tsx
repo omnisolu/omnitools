@@ -18,6 +18,7 @@ import {
   submitExpenseReimbursementToServer,
 } from "./emailApi";
 import AdminPanel from "./AdminPanel";
+import { formatIsoDateRange } from "./formatIsoDate";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
 
@@ -724,9 +725,7 @@ export default function App() {
                   </div>
                   <div className="review-dl-row">
                     <dt>报销期间</dt>
-                    <dd>
-                      {header.periodFrom || "—"} — {header.periodTo || "—"}
-                    </dd>
+                    <dd>{formatIsoDateRange(header.periodFrom, header.periodTo)}</dd>
                   </div>
                   <div className="review-dl-row">
                     <dt>基准币种</dt>
@@ -970,7 +969,7 @@ export default function App() {
                     </div>
                     <div className="summary-dates">
                       基准 {normalizeCurrency(header.baseCurrency) || "—"} ·{" "}
-                      {header.periodFrom} → {header.periodTo}
+                      {formatIsoDateRange(header.periodFrom, header.periodTo)}
                     </div>
                   </div>
                 </section>
