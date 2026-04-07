@@ -33,6 +33,8 @@
   --badge-on-text: #bbf7d0;
   --badge-off-bg: #1e2530;
   --badge-off-text: #94a3b8;
+  /** 主内容区最大宽度（后台侧栏 + 表格需更宽时可调大） */
+  --app-max-width: 1280px;
   font-family: "DM Sans", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
