@@ -25,7 +25,22 @@ const UPLOAD_DIR = path.resolve(
   process.env.OMNITOOLS_UPLOAD_DIR || path.join(ROOT_DIR, "upload")
 );
 
-const { db: expenseDb, dbPath: expenseDbPath } = createExpenseDb(ROOT_DIR);
+let expenseDb;
+let expenseDbPath;
+try {
+  const opened = createExpenseDb(ROOT_DIR);
+  expenseDb = opened.db;
+  expenseDbPath = opened.dbPath;
+} catch (err) {
+  console.error(
+    "FATAL: OmniTools 无法启动邮件 API（SQLite / better-sqlite3）。常见原因：\n" +
+      "  1) 未在服务器上本机编译 better-sqlite3：在项目根执行 npm rebuild better-sqlite3（需 build-essential）\n" +
+      "  2) data/ 目录无写权限或磁盘已满\n" +
+      "  3) 见下方 Node 堆栈"
+  );
+  console.error(err);
+  process.exit(1);
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -95,6 +110,12 @@ function validateSubmitManifest(manifest, attachmentCount) {
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "512kb" }));
+
+/** 不访问数据库，用于确认 Node 进程与 Nginx /api 反代是否通 */
+app.get("/api/health", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, service: "omnitools-email", port: PORT });
+});
 
 app.get("/api/smtp", (req, res) => {
   try {
@@ -296,8 +317,22 @@ app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
   }
 });
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`OmniTools email API listening on http://127.0.0.1:${PORT}`);
+const LISTEN_HOST = process.env.OMNITOOLS_LISTEN_HOST || "127.0.0.1";
+
+const server = app.listen(PORT, LISTEN_HOST, () => {
+  console.log(`OmniTools email API listening on http://${LISTEN_HOST}:${PORT}`);
   console.log(`SQLite (SMTP + expense): ${expenseDbPath}`);
   console.log(`Expense uploads directory: ${UPLOAD_DIR}`);
+});
+
+server.on("error", (err) => {
+  if (err?.code === "EADDRINUSE") {
+    console.error(
+      `FATAL: 端口 ${PORT} 已被占用（EADDRINUSE）。请执行: ss -tlnp | grep :${PORT}` +
+        ` 查看进程；或设置环境变量 PORT=其它端口，并同步 Nginx upstream（install.sh 可用 EMAIL_API_PORT=新端口 重装站点配置）。`
+    );
+  } else {
+    console.error(err);
+  }
+  process.exit(1);
 });

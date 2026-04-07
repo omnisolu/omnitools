@@ -6,6 +6,7 @@
 #
 # 会执行：git pull → 确保编译依赖与 data/upload 目录 → npm ci（失败则 npm install）→ build →
 #       重启 omnitools-email → reload nginx
+# 若需改邮件 API 端口（与 3001 冲突），请用 install.sh 的 EMAIL_API_PORT 或手动改 systemd Environment=PORT 与 Nginx upstream。
 #
 set -euo pipefail
 
@@ -50,6 +51,9 @@ if [[ -f package-lock.json ]]; then
 else
   npm install
 fi
+
+log "编译 better-sqlite3 原生模块…"
+npm rebuild better-sqlite3 || die "better-sqlite3 编译失败。请确认已安装 build-essential。"
 
 log "构建前端…"
 npm run build

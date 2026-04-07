@@ -40,7 +40,7 @@ export function migrateLegacySmtpIfNeeded(db, rootDir) {
   if (existing) return;
   let oldDb;
   try {
-    oldDb = new Database(legacyPath, { readonly: true });
+    oldDb = new Database(legacyPath, { readonly: true, timeout: 5000 });
     const row = oldDb.prepare(`SELECT value FROM settings WHERE key = ?`).get("smtp");
     oldDb.close();
     oldDb = null;
@@ -76,6 +76,7 @@ export function createExpenseDb(rootDir) {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 5000");
   db.exec(`
     CREATE TABLE IF NOT EXISTS reimbursements (
       id TEXT PRIMARY KEY,

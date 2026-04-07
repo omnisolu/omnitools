@@ -11,6 +11,8 @@
 #   - 依赖 better-sqlite3 需在安装 npm 包时本机编译（需 build-essential）
 # 可选环境变量（可写入 systemd drop-in 或 export 后重启 omnitools-email）：
 #   SMTP_SECRET、OMNITOOLS_DB_PATH、OMNITOOLS_UPLOAD_DIR
+# 若 3001 已被占用，安装前可指定其它端口（须与 Nginx upstream 一致）：
+#   EMAIL_API_PORT=3002 sudo bash install.sh
 #
 set -euo pipefail
 
@@ -23,6 +25,11 @@ CERTBOT_EMAIL="${EMAIL:-}"
 
 log() { printf '[OmniTools] %s\n' "$*"; }
 die() { log "错误: $*"; exit 1; }
+
+EMAIL_API_PORT="${EMAIL_API_PORT:-3001}"
+if ! [[ "${EMAIL_API_PORT}" =~ ^[0-9]+$ ]] || [[ "${EMAIL_API_PORT}" -lt 1 ]] || [[ "${EMAIL_API_PORT}" -gt 65535 ]]; then
+  die "EMAIL_API_PORT 无效（需为 1～65535 的数字）"
+fi
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   die "请使用 root 运行: sudo bash install.sh"
@@ -88,6 +95,10 @@ if [[ -f package-lock.json ]]; then
 else
   npm install
 fi
+
+log "编译 better-sqlite3 原生模块（必须与当前 Node/GLIBC 一致，否则 omnitools-email 会启动失败）…"
+npm rebuild better-sqlite3 || die "better-sqlite3 编译失败。请确认已安装 build-essential，并检查上方 npm 输出。"
+
 npm run build
 
 [[ -f "${APP_DIR}/dist/index.html" ]] || die "构建失败：未生成 dist/index.html"
@@ -108,6 +119,8 @@ WorkingDirectory=${APP_DIR}
 # Environment=OMNITOOLS_DB_PATH=/var/lib/omnitools/omnitools.sqlite
 # Environment=OMNITOOLS_UPLOAD_DIR=/var/lib/omnitools/upload
 # Environment=SMTP_SECRET=请替换为随机长字符串
+# 默认仅监听 127.0.0.1（供本机 Nginx 反代）。容器/特殊网络需对外监听时可设为 0.0.0.0
+# Environment=OMNITOOLS_LISTEN_HOST=127.0.0.1
 ExecStart=/usr/bin/node server/send-mail.mjs
 Restart=on-failure
 RestartSec=10
@@ -119,6 +132,12 @@ WantedBy=multi-user.target
 SVCEOF
 # 替换 ${APP_DIR} 占位符
 sed -i "s|\${APP_DIR}|${APP_DIR}|g" /etc/systemd/system/omnitools-email.service
+# 与 Nginx upstream 一致，供 send-mail.mjs 读取 process.env.PORT
+if grep -q '^Environment=PORT=' /etc/systemd/system/omnitools-email.service; then
+  sed -i "s/^Environment=PORT=.*/Environment=PORT=${EMAIL_API_PORT}/" /etc/systemd/system/omnitools-email.service
+else
+  sed -i "/^WorkingDirectory=/a Environment=PORT=${EMAIL_API_PORT}" /etc/systemd/system/omnitools-email.service
+fi
 
 systemctl daemon-reload
 systemctl enable omnitools-email
@@ -129,7 +148,7 @@ log "配置 nginx 站点 ${NGINX_SITE}…"
 cat > "${NGINX_CONF}" <<EOF
 # ${APP_NAME} — 由 install.sh 生成
 upstream email_server {
-    server 127.0.0.1:3001;
+    server 127.0.0.1:${EMAIL_API_PORT};
 }
 
 server {
@@ -149,6 +168,7 @@ server {
     location /api/ {
         proxy_pass http://email_server;
         proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
@@ -203,7 +223,7 @@ if [[ -n "${SSL_DOMAIN}" ]]; then
   if ! grep -q "location /api/" "${NGINX_CONF}"; then
     log "⚠️  警告：API 代理配置在 SSL 修改后可能丢失，正在修复…"
     # 在第一个非 SSL 的 location 块前添加 API 代理
-    sed -i '/location \/ {/i \    # API 代理\n    location \/api\/ {\n        proxy_pass http:\/\/email_server;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_buffering off;\n        proxy_request_buffering off;\n        client_max_body_size 100M;\n    }\n' "${NGINX_CONF}"
+    sed -i '/location \/ {/i \    # API 代理\n    location \/api\/ {\n        proxy_pass http:\/\/email_server;\n        proxy_http_version 1.1;\n        proxy_connect_timeout 5s;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_buffering off;\n        proxy_request_buffering off;\n        client_max_body_size 100M;\n    }\n' "${NGINX_CONF}"
     nginx -t && systemctl reload nginx
   fi
   
@@ -223,5 +243,5 @@ log "  静态文件:  ${APP_DIR}/dist"
 log "  SQLite:    ${APP_DIR}/data/omnitools.sqlite（报销 + SMTP）"
 log "  上传目录:  ${APP_DIR}/upload/（EXPYYMMXX 子目录）"
 log "  访问地址:  ${app_url}"
-log "  邮件 API:  systemctl status omnitools-email（端口 3001，经 Nginx /api/ 反代）"
+log "  邮件 API:  systemctl status omnitools-email（端口 ${EMAIL_API_PORT}，经 Nginx /api/ 反代）"
 log "后续更新:   sudo bash ${APP_DIR}/upgrade.sh"

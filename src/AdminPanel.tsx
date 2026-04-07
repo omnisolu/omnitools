@@ -363,7 +363,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               disabled={smtpSaveBusy}
               onClick={() => void handleSaveSmtp()}
             >
-              {smtpSaveBusy ? "保存中…" : "保存 SMTP"}
+              {smtpSaveBusy ? "保存中（连接邮件 API）…" : "保存 SMTP"}
             </button>
             <button
               type="button"
