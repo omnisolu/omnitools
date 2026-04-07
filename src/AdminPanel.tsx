@@ -354,8 +354,13 @@ export default function AdminPanel({
               value={smtp.pass}
               onChange={(e) => patchSmtp("pass", e.target.value)}
               autoComplete="current-password"
+              placeholder="加载后不显示已存密码；不改主机/用户名时留空仍会使用已保存密码"
             />
           </label>
+          <p className="card-hint admin-smtp-pass-hint field-span-2">
+            出于安全，接口不会在页面上回填密码；若已在服务器保存过，测试发信与保存（主机、用户名未变）会使用库内密码。若修改了 SMTP
+            主机或用户名，请重新输入密码。
+          </p>
           <label className="field field-span-2">
             <span className="field-label">发件人 From（邮箱）</span>
             <input

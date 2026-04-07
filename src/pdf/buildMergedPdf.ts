@@ -64,6 +64,12 @@ export async function buildMergedReimbursementPdf(
     useCORS: true,
     logging: false,
     backgroundColor: "#ffffff",
+    onclone: (clonedDoc) => {
+      const node = clonedDoc.querySelector(".form-template");
+      if (node) {
+        node.classList.add("form-template--force-light");
+      }
+    },
   });
   const imgData = canvas.toDataURL("image/png");
 

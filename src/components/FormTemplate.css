@@ -335,3 +335,60 @@
     print-color-adjust: exact;
   }
 }
+
+/* 屏幕深色预览；打印仍为上方默认浅色。PDF 生成时 html2canvas 会加 .form-template--force-light 以恢复浅色版面。 */
+@media screen {
+  .form-template:not(.form-template--force-light) {
+    --excel-blue: #6b9fe8;
+    --excel-green: #1a3d30;
+    --excel-grid: #3d4d5c;
+    --excel-bg: #151a22;
+    color: #e8edf4;
+    border-color: var(--excel-grid);
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__meta-label {
+    background: #1e2530;
+    color: #e8edf4;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__meta-value {
+    color: #e8edf4;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__meta-hint {
+    color: #94a3b8;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__fx-note {
+    color: #94a3b8;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__period {
+    background: #151a22;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__totals-table th {
+    background: #1e2530;
+    color: #e8edf4;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__total-row th {
+    background: #252b36;
+    color: #e8edf4;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__total-amount {
+    background: var(--excel-green) !important;
+    color: #e8edf4 !important;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__receipt-note {
+    color: #e8edf4;
+  }
+
+  .form-template:not(.form-template--force-light) .form-template__sig-line,
+  .form-template:not(.form-template--force-light) .form-template__date-line {
+    border-bottom-color: #94a3b8;
+  }
+}

@@ -10,8 +10,8 @@
 .app-menubar {
   margin: -1.5rem -1.25rem 0;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  background: linear-gradient(180deg, #1a1f2a 0%, #12151c 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 .app-menubar-inner {
@@ -31,13 +31,13 @@
 
 .app-menubar-segment--left {
   border-right: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(30, 37, 50, 0.85);
 }
 
 .app-menubar-segment--right {
   justify-content: flex-end;
   gap: 0.65rem;
-  background: rgba(255, 255, 255, 0.45);
+  background: rgba(22, 27, 36, 0.65);
 }
 
 .app-menubar-logo {
@@ -55,7 +55,7 @@
   color: var(--muted);
   padding: 0.2rem 0.45rem;
   border-radius: 6px;
-  background: #e8eef5;
+  background: var(--accent-muted);
 }
 
 .app-menubar-company {
@@ -183,15 +183,15 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.55rem 0.75rem;
-  background: #fafbfc;
+  background: var(--input-bg);
   color: var(--text);
 }
 
 .field-input:focus {
-  outline: 2px solid rgba(30, 77, 140, 0.35);
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
   border-color: var(--accent);
-  background: #fff;
+  background: var(--input-focus-bg);
 }
 
 .field-error {
@@ -306,13 +306,13 @@
 }
 
 .expense-table th {
-  background: #eef2f7;
+  background: var(--table-header);
   font-weight: 600;
 }
 
 .expense-table-row--editing td {
-  background: #f0f7ff;
-  box-shadow: inset 0 0 0 1px rgba(30, 77, 140, 0.2);
+  background: var(--table-row-edit);
+  box-shadow: inset 0 0 0 1px rgba(111, 168, 255, 0.25);
 }
 
 .expense-table .num {
@@ -376,10 +376,10 @@
   right: 0;
   bottom: 0;
   padding: 0.85rem 1.25rem;
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--footer-bg);
   backdrop-filter: blur(8px);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 20px rgba(26, 35, 50, 0.06);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
 }
 
 .footer-buttons {
@@ -404,18 +404,18 @@
 }
 
 .btn--ghost {
-  background: #fff;
+  background: var(--btn-ghost-bg);
   border-color: var(--border);
   color: var(--text);
 }
 
 .btn--ghost:hover:not(:disabled) {
-  background: #f0f3f7;
+  background: var(--btn-ghost-hover);
 }
 
 .btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: #0f172a;
 }
 
 .btn--primary:hover:not(:disabled) {
@@ -423,12 +423,12 @@
 }
 
 .btn--accent {
-  background: #0d3b1f;
-  color: #fff;
+  background: var(--accent-green);
+  color: #e8fdf0;
 }
 
 .btn--accent:hover:not(:disabled) {
-  background: #072814;
+  background: var(--accent-green-hover);
 }
 
 .field-textarea {
@@ -462,9 +462,9 @@
   margin: 0 0 0.75rem;
   padding: 0.65rem 0.75rem;
   border-radius: var(--radius);
-  background: #ecfdf3;
-  border: 1px solid #b8e0c8;
-  color: var(--text);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: #a7f3c0;
   font-size: 0.92rem;
 }
 
@@ -559,12 +559,12 @@
 }
 
 .admin-sidebar-button:hover {
-  background: #eef2f7;
+  background: var(--btn-ghost-hover);
 }
 
 .admin-sidebar-button.active {
   background: var(--primary);
-  color: #fff;
+  color: #f0f6ff;
   border-color: transparent;
 }
 
@@ -593,7 +593,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1rem 1.25rem;
-  background: #f8fafc;
+  background: var(--surface-2);
 }
 
 .admin-smtp-title {
@@ -605,13 +605,19 @@
   margin-bottom: 0.85rem;
 }
 
+.admin-smtp-pass-hint {
+  margin: -0.35rem 0 0.65rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .admin-smtp-banner {
   margin: 0 0 1rem;
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
-  border: 1px solid #f59e0b;
-  background: #fffbeb;
-  color: #92400e;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
   font-size: 0.92rem;
   line-height: 1.45;
 }
@@ -620,7 +626,7 @@
   font-size: 0.88em;
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
-  background: #eef2f7;
+  background: var(--code-bg);
 }
 
 .admin-smtp-inner {
@@ -733,13 +739,13 @@
 }
 
 .profile-preset-badge--on {
-  background: #dcfce7;
-  color: #14532d;
+  background: var(--badge-on-bg);
+  color: var(--badge-on-text);
 }
 
 .profile-preset-badge--off {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--badge-off-bg);
+  color: var(--badge-off-text);
 }
 
 .profile-preset-add {
@@ -822,7 +828,7 @@
 }
 
 .admin-table th {
-  background: #eef2f7;
+  background: var(--table-header);
   font-weight: 600;
 }
 
@@ -831,12 +837,14 @@
 }
 
 .print-area {
-  background: #fff;
+  background: var(--surface);
+  border-radius: var(--radius);
 }
 
 @media print {
   body {
     background: #fff !important;
+    color: #000 !important;
   }
 
   .no-print {

@@ -393,21 +393,32 @@ export function saveSmtpSettings(db, settings) {
   db.prepare(`INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)`).run("smtp", jsonValue);
 }
 
+function smtpStrTrim(s) {
+  return String(s ?? "").trim();
+}
+
 /**
- * 合并请求体与已存配置（用于测试发信、发 PDF 时补全密码）。
+ * 合并请求体与已存配置（用于测试发信、发 PDF、POST /api/smtp）。
+ * 前端加载后密码框恒为空（GET 不返回密码）；若用 { ...stored, ...body } 会把 body.pass=""
+ * 覆盖掉已保存密码。当主机/用户名未变且未填写新密码时，应保留库中密码。
  * @param {import("better-sqlite3").Database} db
  */
 export function resolveSmtpMerge(db, body) {
+  const b = body && typeof body === "object" ? body : {};
   const stored = loadSmtpSettings(db);
-  const smtp = {
-    ...stored,
-    ...body,
-  };
-  if (stored && body.host && body.host !== stored.host) {
-    smtp.pass = body.pass || "";
+  if (!stored) {
+    return { ...b };
   }
-  if (stored && body.user && body.user !== stored.user) {
-    smtp.pass = body.pass || "";
+  const smtp = { ...stored, ...b };
+  const hostChanged =
+    b.host !== undefined && smtpStrTrim(b.host) !== smtpStrTrim(stored.host);
+  const userChanged =
+    b.user !== undefined && smtpStrTrim(b.user) !== smtpStrTrim(stored.user);
+  const passProvided = b.pass != null && String(b.pass).trim() !== "";
+  if (hostChanged || userChanged) {
+    smtp.pass = passProvided ? b.pass : "";
+  } else if (!passProvided) {
+    smtp.pass = stored.pass;
   }
   return smtp;
 }

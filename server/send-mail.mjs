@@ -183,20 +183,14 @@ app.get("/api/smtp", (req, res) => {
 });
 
 app.post("/api/smtp", (req, res) => {
-  const smtp = req.body;
-  const stored = loadSmtpSettings(expenseDb);
-  const finalSettings = { ...smtp };
-  if (!finalSettings.pass && stored && finalSettings.host === stored.host && finalSettings.user === stored.user) {
-    finalSettings.pass = stored.pass;
-  }
-  const errMsg = validateSmtp(finalSettings);
-  if (errMsg) {
-    res.status(400).json({ error: errMsg });
-    return;
-  }
-
   try {
-    saveSmtpSettings(expenseDb, finalSettings);
+    const merged = resolveSmtpMerge(expenseDb, req.body || {});
+    const errMsg = validateSmtp(merged);
+    if (errMsg) {
+      res.status(400).json({ error: errMsg });
+      return;
+    }
+    saveSmtpSettings(expenseDb, merged);
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/smtp failed:", err);

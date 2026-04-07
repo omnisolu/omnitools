@@ -1,14 +1,38 @@
 :root {
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --border: #d8dee8;
-  --text: #1a2332;
-  --muted: #5c6b7f;
-  --accent: #1e4d8c;
-  --accent-hover: #163a6b;
-  --danger: #b42318;
+  color-scheme: dark;
+  --bg: #0e1117;
+  --surface: #161b24;
+  --surface-2: #1c2230;
+  --border: #2a3142;
+  --text: #e8edf4;
+  --muted: #94a3b8;
+  --accent: #6fa8ff;
+  --accent-hover: #93bfff;
+  --accent-muted: rgba(111, 168, 255, 0.18);
+  --primary: #4a7ec2;
+  --danger: #f87171;
   --radius: 10px;
-  --shadow: 0 8px 30px rgba(26, 35, 50, 0.08);
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --input-bg: #121722;
+  --input-focus-bg: #171e2e;
+  --ring: rgba(111, 168, 255, 0.45);
+  --table-header: #1e2636;
+  --table-row-edit: rgba(111, 168, 255, 0.12);
+  --footer-bg: rgba(22, 27, 36, 0.92);
+  --btn-ghost-bg: #1e2530;
+  --btn-ghost-hover: #283040;
+  --accent-green: #1e4d32;
+  --accent-green-hover: #163d28;
+  --code-bg: #252d3d;
+  --warn-bg: #2a2210;
+  --warn-border: #b45309;
+  --warn-text: #fcd34d;
+  --success-bg: #14231a;
+  --success-border: #2d5a3d;
+  --badge-on-bg: #14532d;
+  --badge-on-text: #bbf7d0;
+  --badge-off-bg: #1e2530;
+  --badge-off-text: #94a3b8;
   font-family: "DM Sans", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -49,4 +73,17 @@ select,
 textarea {
   font-family: inherit;
   font-size: 1rem;
+  color: var(--text);
+  background: var(--input-bg);
+  border-color: var(--border);
+}
+
+select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
 }

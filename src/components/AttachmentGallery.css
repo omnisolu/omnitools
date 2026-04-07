@@ -1,12 +1,13 @@
 .attachment-gallery {
   margin-top: 28px;
   padding-top: 16px;
-  border-top: 2px dashed #ccc;
+  border-top: 2px dashed var(--border, #2a3142);
 }
 
 .attachment-gallery__title {
   margin: 0 0 6px;
   font-size: 1.05rem;
+  color: var(--text, #e8edf4);
 }
 
 .attachment-gallery__hint {
@@ -25,10 +26,10 @@
 }
 
 .attachment-gallery__item {
-  border: 1px solid #bbb;
+  border: 1px solid var(--border, #2a3142);
   border-radius: 6px;
   overflow: hidden;
-  background: #fafafa;
+  background: var(--surface, #161b24);
   break-inside: avoid;
   page-break-inside: avoid;
 }
@@ -37,8 +38,9 @@
   padding: 8px 10px;
   font-size: 0.8rem;
   font-weight: 600;
-  background: #eee;
-  border-bottom: 1px solid #ccc;
+  background: var(--surface-2, #1c2230);
+  border-bottom: 1px solid var(--border, #2a3142);
+  color: var(--text, #e8edf4);
 }
 
 .attachment-gallery__img {
@@ -46,7 +48,7 @@
   width: 100%;
   max-height: 520px;
   object-fit: contain;
-  background: #fff;
+  background: var(--input-bg, #121722);
 }
 
 .attachment-gallery__pdf {
