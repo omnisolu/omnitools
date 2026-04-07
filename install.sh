@@ -5,6 +5,13 @@
 # 可选 SSL: DOMAIN=example.com EMAIL=you@example.com sudo bash install.sh
 # 请在包含 package.json 的项目根目录下执行（与 install.sh 同级）。
 #
+# 数据说明（与当前代码一致）：
+#   - data/omnitools.sqlite — better-sqlite3：报销数据 + SMTP（app_settings）
+#   - upload/EXPYYMMXX/ — 合并 PDF 与收据附件
+#   - 依赖 better-sqlite3 需在安装 npm 包时本机编译（需 build-essential）
+# 可选环境变量（可写入 systemd drop-in 或 export 后重启 omnitools-email）：
+#   SMTP_SECRET、OMNITOOLS_DB_PATH、OMNITOOLS_UPLOAD_DIR
+#
 set -euo pipefail
 
 APP_NAME="OmniTools"
@@ -62,6 +69,14 @@ log "Node $(node -v) / npm $(npm -v)"
 # --- nginx ---
 apt-get install -y -qq nginx
 
+# --- 原生模块编译（better-sqlite3）---
+log "安装编译工具（用于 npm 构建 better-sqlite3）…"
+apt-get install -y -qq build-essential
+
+# --- 数据目录（SQLite 与上传附件；邮件服务运行用户需可写）---
+log "创建 data/ 与 upload/…"
+install -d -m0755 "${APP_DIR}/data" "${APP_DIR}/upload"
+
 # --- 构建前端 ---
 log "安装 npm 依赖并构建 ${APP_NAME}…"
 cd "${APP_DIR}"
@@ -78,7 +93,7 @@ npm run build
 log "配置邮件服务 systemd…"
 cat > "/etc/systemd/system/omnitools-email.service" <<'SVCEOF'
 [Unit]
-Description=OmniTools Email Server
+Description=OmniTools API (SMTP + SQLite + uploads)
 After=network.target
 StartLimitInterval=200
 StartLimitBurst=5
@@ -86,6 +101,10 @@ StartLimitBurst=5
 [Service]
 Type=simple
 WorkingDirectory=${APP_DIR}
+# 默认使用项目下 data/ 与 upload/；可取消注释并设置绝对路径
+# Environment=OMNITOOLS_DB_PATH=/var/lib/omnitools/omnitools.sqlite
+# Environment=OMNITOOLS_UPLOAD_DIR=/var/lib/omnitools/upload
+# Environment=SMTP_SECRET=请替换为随机长字符串
 ExecStart=/usr/bin/node server/send-mail.mjs
 Restart=on-failure
 RestartSec=10
@@ -198,5 +217,8 @@ fi
 log "完成。"
 log "  应用目录: ${APP_DIR}"
 log "  静态文件:  ${APP_DIR}/dist"
+log "  SQLite:    ${APP_DIR}/data/omnitools.sqlite（报销 + SMTP）"
+log "  上传目录:  ${APP_DIR}/upload/（EXPYYMMXX 子目录）"
 log "  访问地址:  ${app_url}"
-log "更新部署:   cd ${APP_DIR} && sudo git pull && sudo npm ci && sudo npm run build && sudo systemctl reload nginx"
+log "  邮件 API:  systemctl status omnitools-email（端口 3001，经 Nginx /api/ 反代）"
+log "后续更新:   sudo bash ${APP_DIR}/upgrade.sh"

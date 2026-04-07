@@ -50,6 +50,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [smtp, setSmtp] = useState<SmtpSettings>(emptySmtp);
+  /** 已从服务端载入且包含有效主机时视为已配置 */
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
   const [smtpLoading, setSmtpLoading] = useState(true);
   const [smtpMessage, setSmtpMessage] = useState<string | null>(null);
   const [smtpSaveBusy, setSmtpSaveBusy] = useState(false);
@@ -86,10 +88,22 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     let canceled = false;
     async function loadSmtp() {
       setSmtpLoading(true);
+      setSmtpMessage(null);
       try {
         const saved = await getSmtpSettings();
-        if (!canceled && saved) {
+        if (canceled) return;
+        if (saved) {
           setSmtp(saved);
+          setSmtpConfigured(Boolean(saved.host?.trim()));
+        } else {
+          setSmtp(emptySmtp);
+          setSmtpConfigured(false);
+        }
+      } catch (e) {
+        if (!canceled) {
+          setSmtp(emptySmtp);
+          setSmtpConfigured(false);
+          setSmtpMessage((e as Error)?.message || "无法从服务器加载 SMTP 配置。");
         }
       } finally {
         if (!canceled) {
@@ -118,7 +132,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     try {
       await saveSmtpSettings(cfg);
       setSmtp(cfg);
-      setSmtpMessage("SMTP 已保存到服务器本地数据库。您可以继续发送测试邮件。");
+      setSmtpConfigured(Boolean(cfg.host?.trim()));
+      setSmtpMessage("SMTP 已保存到 SQLite（data/omnitools.sqlite）。您可以继续发送测试邮件。");
     } catch (e) {
       setSmtpMessage((e as Error)?.message || "保存失败");
     } finally {
@@ -156,6 +171,11 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
   const reportView = (
     <>
+      {!smtpLoading && !smtpConfigured ? (
+        <p className="admin-smtp-banner" role="status">
+          尚未配置 SMTP：请切换到左侧「SMTP 设置」填写邮件服务器并保存，否则无法在报销页发送合并 PDF。
+        </p>
+      ) : null}
       {loading ? (
         <div className="admin-empty">正在加载提交记录…</div>
       ) : error ? (
@@ -248,9 +268,16 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       <p className="card-hint admin-smtp-hint">
         浏览器无法直接连接 SMTP；开发时运行{" "}
         <code className="admin-code">npm run dev</code>{" "}
-        会同时启动前端与邮件 API。SMTP 密码已保存到服务端 SQLite 并使用 AES 加密。生产环境建议由 Nginx 将{" "}
+        会同时启动前端与邮件 API。配置保存在服务端{" "}
+        <code className="admin-code">data/omnitools.sqlite</code>（与报销数据同一库），密码使用 AES-GCM
+        加密存储。生产环境建议由 Nginx 将{" "}
         <code className="admin-code">/api</code> 反代到该服务。
       </p>
+      {!smtpLoading && !smtpConfigured ? (
+        <p className="admin-smtp-banner" role="alert">
+          当前<strong>没有</strong>有效的 SMTP 配置。请填写下方表单并点击「保存 SMTP」。
+        </p>
+      ) : null}
       {smtpLoading ? (
         <p className="admin-empty admin-smtp-inner">正在加载 SMTP 配置…</p>
       ) : (

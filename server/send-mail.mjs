@@ -2,8 +2,6 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import nodemailer from "nodemailer";
-import initSqlJs from "sql.js";
-import crypto from "crypto";
 import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
@@ -13,6 +11,9 @@ import {
   allocateNextReimbursementCode,
   insertReimbursementSubmission,
   getAllReimbursementsForApi,
+  loadSmtpSettings,
+  saveSmtpSettings,
+  resolveSmtpMerge,
 } from "./expense-sqlite.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,13 +24,6 @@ const PORT = Number(process.env.PORT) || 3001;
 const UPLOAD_DIR = path.resolve(
   process.env.OMNITOOLS_UPLOAD_DIR || path.join(ROOT_DIR, "upload")
 );
-
-/** SMTP 设置（sql.js），与上游一致，位于 server/omnitools.sqlite */
-const DB_FILE = path.join(__dirname, "omnitools.sqlite");
-const SMTP_SECRET = process.env.SMTP_SECRET || "omnitools-default-secret-please-change";
-const ENCRYPTION_KEY = crypto.createHash("sha256").update(SMTP_SECRET).digest();
-
-const SQL = await initSqlJs();
 
 const { db: expenseDb, dbPath: expenseDbPath } = createExpenseDb(ROOT_DIR);
 
@@ -42,123 +36,6 @@ const submitUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
-
-function openSmtpDatabase() {
-  if (fs.existsSync(DB_FILE)) {
-    const buffer = fs.readFileSync(DB_FILE);
-    return new SQL.Database(buffer);
-  }
-  return new SQL.Database();
-}
-
-function saveSmtpDatabase(db) {
-  const data = db.export();
-  fs.writeFileSync(DB_FILE, Buffer.from(data));
-}
-
-const smtpDb = openSmtpDatabase();
-smtpDb.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-try {
-  smtpDb.run("DELETE FROM settings WHERE value IS NULL OR value = ''");
-} catch (err) {
-  console.error("Failed to clean old settings rows:", err);
-}
-saveSmtpDatabase(smtpDb);
-smtpDb.close();
-
-function encryptText(value) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("base64")}:${tag.toString("base64")}:${encrypted.toString("base64")}`;
-}
-
-function decryptText(value) {
-  const parts = value.split(":");
-  if (parts.length !== 3) {
-    throw new Error("Invalid encrypted payload");
-  }
-  const iv = Buffer.from(parts[0], "base64");
-  const tag = Buffer.from(parts[1], "base64");
-  const encrypted = Buffer.from(parts[2], "base64");
-  const decipher = crypto.createDecipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
-}
-
-function getSetting(key) {
-  const db = openSmtpDatabase();
-  const stmt = db.prepare("SELECT value FROM settings WHERE key = ?");
-  const row = stmt.get(key);
-  db.close();
-  if (!row || row.value == null || row.value === "" || row.value === "undefined") {
-    return null;
-  }
-
-  try {
-    return JSON.parse(row.value);
-  } catch (err) {
-    console.error(`Failed to parse stored setting for key=${key}:`, err);
-    try {
-      const cleanupDb = openSmtpDatabase();
-      const cleanupStmt = cleanupDb.prepare("DELETE FROM settings WHERE key = ?");
-      cleanupStmt.run(key);
-      saveSmtpDatabase(cleanupDb);
-      cleanupDb.close();
-    } catch (cleanupErr) {
-      console.error(`Failed to clean invalid stored setting for key=${key}:`, cleanupErr);
-    }
-    return null;
-  }
-}
-
-function saveSetting(key, value) {
-  const db = openSmtpDatabase();
-  const stmt = db.prepare("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)");
-  const jsonValue = value === undefined ? "{}" : JSON.stringify(value);
-  stmt.run(key, jsonValue);
-  saveSmtpDatabase(db);
-  db.close();
-}
-
-function saveSmtpSettingsToDisk(settings) {
-  const payload = { ...settings };
-  if (payload.pass) {
-    payload.pass = encryptText(payload.pass);
-  }
-  saveSetting("smtp", payload);
-}
-
-function loadSmtpSettingsFromDisk() {
-  const stored = getSetting("smtp");
-  if (!stored) return null;
-  if (stored.pass) {
-    try {
-      stored.pass = decryptText(stored.pass);
-    } catch {
-      stored.pass = "";
-    }
-  }
-  return stored;
-}
-
-function resolveSmtp(body) {
-  const stored = loadSmtpSettingsFromDisk();
-  const smtp = {
-    ...stored,
-    ...body,
-  };
-
-  if (stored && body.host && body.host !== stored.host) {
-    smtp.pass = body.pass || "";
-  }
-  if (stored && body.user && body.user !== stored.user) {
-    smtp.pass = body.pass || "";
-  }
-
-  return smtp;
-}
 
 function createTransportFromSmtp(smtp) {
   const port = Number(smtp.port) || 587;
@@ -221,7 +98,7 @@ app.use(express.json({ limit: "512kb" }));
 
 app.get("/api/smtp", (req, res) => {
   try {
-    const smtp = loadSmtpSettingsFromDisk();
+    const smtp = loadSmtpSettings(expenseDb);
     if (!smtp) {
       res.json(null);
       return;
@@ -235,7 +112,7 @@ app.get("/api/smtp", (req, res) => {
 
 app.post("/api/smtp", (req, res) => {
   const smtp = req.body;
-  const stored = loadSmtpSettingsFromDisk();
+  const stored = loadSmtpSettings(expenseDb);
   const finalSettings = { ...smtp };
   if (!finalSettings.pass && stored && finalSettings.host === stored.host && finalSettings.user === stored.user) {
     finalSettings.pass = stored.pass;
@@ -247,7 +124,7 @@ app.post("/api/smtp", (req, res) => {
   }
 
   try {
-    saveSmtpSettingsToDisk(finalSettings);
+    saveSmtpSettings(expenseDb, finalSettings);
     res.json({ ok: true });
   } catch (err) {
     console.error("POST /api/smtp failed:", err);
@@ -256,7 +133,7 @@ app.post("/api/smtp", (req, res) => {
 });
 
 app.post("/api/test-smtp", async (req, res) => {
-  const smtp = resolveSmtp(req.body);
+  const smtp = resolveSmtpMerge(expenseDb, req.body);
   const errMsg = validateSmtp(smtp);
   if (errMsg) {
     res.status(400).json({ error: errMsg });
@@ -386,7 +263,7 @@ app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
     res.status(400).json({ error: "SMTP 配置格式无效" });
     return;
   }
-  smtp = resolveSmtp(smtp);
+  smtp = resolveSmtpMerge(expenseDb, smtp);
   const errMsg = validateSmtp(smtp);
   if (errMsg) {
     res.status(400).json({ error: errMsg });
@@ -421,7 +298,6 @@ app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
 
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`OmniTools email API listening on http://127.0.0.1:${PORT}`);
-  console.log(`SMTP settings (sql.js): ${DB_FILE}`);
+  console.log(`SQLite (SMTP + expense): ${expenseDbPath}`);
   console.log(`Expense uploads directory: ${UPLOAD_DIR}`);
-  console.log(`Expense SQLite database: ${expenseDbPath}`);
 });

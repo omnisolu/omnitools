@@ -9,7 +9,7 @@ export interface HeaderInfo {
   periodTo: string;
 }
 
-/** SMTP 配置（由服务端 /api/smtp 持久化，见 emailApi） */
+/** SMTP 配置（由服务端写入 data/omnitools.sqlite，见 emailApi） */
 export interface SmtpSettings {
   host: string;
   port: number;

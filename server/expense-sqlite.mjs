@@ -1,7 +1,69 @@
 import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 import Database from "better-sqlite3";
+
+const SMTP_SECRET = process.env.SMTP_SECRET || "omnitools-default-secret-please-change";
+const ENCRYPTION_KEY = crypto.createHash("sha256").update(SMTP_SECRET).digest();
+
+function encryptText(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString("base64")}:${tag.toString("base64")}:${encrypted.toString("base64")}`;
+}
+
+function decryptText(value) {
+  const parts = value.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Invalid encrypted payload");
+  }
+  const iv = Buffer.from(parts[0], "base64");
+  const tag = Buffer.from(parts[1], "base64");
+  const encrypted = Buffer.from(parts[2], "base64");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
+
+/**
+ * 从旧版 server/omnitools.sqlite（sql.js）迁移 SMTP 到本库 app_settings（仅当尚未有 smtp 时）。
+ * @param {import("better-sqlite3").Database} db
+ * @param {string} rootDir 项目根目录
+ */
+export function migrateLegacySmtpIfNeeded(db, rootDir) {
+  const legacyPath = path.join(rootDir, "server", "omnitools.sqlite");
+  if (!fs.existsSync(legacyPath)) return;
+  const existing = db.prepare(`SELECT 1 AS ok FROM app_settings WHERE key = 'smtp'`).get();
+  if (existing) return;
+  let oldDb;
+  try {
+    oldDb = new Database(legacyPath, { readonly: true });
+    const row = oldDb.prepare(`SELECT value FROM settings WHERE key = ?`).get("smtp");
+    oldDb.close();
+    oldDb = null;
+    if (row?.value) {
+      db.prepare(`INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)`).run("smtp", row.value);
+      try {
+        fs.renameSync(legacyPath, `${legacyPath}.migrated.bak`);
+      } catch {
+        /* 可能无权限重命名，忽略 */
+      }
+      console.log("Migrated SMTP settings from legacy server/omnitools.sqlite to app database.");
+    }
+  } catch (e) {
+    if (oldDb) {
+      try {
+        oldDb.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    console.warn("SMTP legacy migration skipped:", e.message);
+  }
+}
 
 /**
  * @param {string} rootDir 项目根目录（用于默认 data 路径）
@@ -46,8 +108,75 @@ export function createExpenseDb(rootDir) {
     );
     CREATE INDEX IF NOT EXISTS idx_exp_lines_reimb ON expense_lines(reimbursement_id);
     CREATE INDEX IF NOT EXISTS idx_exp_att_line ON expense_line_attachments(expense_line_id);
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
+  migrateLegacySmtpIfNeeded(db, rootDir);
   return { db, dbPath };
+}
+
+/**
+ * 读取 SMTP 配置（密码已解密，供服务端发信使用）。
+ * @param {import("better-sqlite3").Database} db
+ */
+export function loadSmtpSettings(db) {
+  const row = db.prepare(`SELECT value FROM app_settings WHERE key = ?`).get("smtp");
+  if (!row || row.value == null || row.value === "" || row.value === "undefined") {
+    return null;
+  }
+  try {
+    const stored = JSON.parse(row.value);
+    if (stored?.pass) {
+      try {
+        stored.pass = decryptText(stored.pass);
+      } catch {
+        stored.pass = "";
+      }
+    }
+    return stored;
+  } catch (err) {
+    console.error("Failed to parse SMTP settings:", err);
+    try {
+      db.prepare(`DELETE FROM app_settings WHERE key = ?`).run("smtp");
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+}
+
+/**
+ * 保存 SMTP（密码在库内 AES-GCM 加密存储）。
+ * @param {import("better-sqlite3").Database} db
+ */
+export function saveSmtpSettings(db, settings) {
+  const payload = { ...settings };
+  if (payload.pass) {
+    payload.pass = encryptText(payload.pass);
+  }
+  const jsonValue = JSON.stringify(payload);
+  db.prepare(`INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)`).run("smtp", jsonValue);
+}
+
+/**
+ * 合并请求体与已存配置（用于测试发信、发 PDF 时补全密码）。
+ * @param {import("better-sqlite3").Database} db
+ */
+export function resolveSmtpMerge(db, body) {
+  const stored = loadSmtpSettings(db);
+  const smtp = {
+    ...stored,
+    ...body,
+  };
+  if (stored && body.host && body.host !== stored.host) {
+    smtp.pass = body.pass || "";
+  }
+  if (stored && body.user && body.user !== stored.user) {
+    smtp.pass = body.pass || "";
+  }
+  return smtp;
 }
 
 /**

@@ -1,80 +1,75 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# OmniTools — 服务器上更新部署（与 install.sh 配套）
+# 用法（需 root）: sudo bash upgrade.sh
+# 请在项目根目录执行（与 package.json 同级）。
+#
+# 会执行：git pull → 确保编译依赖与 data/upload 目录 → npm ci → build →
+#       重启 omnitools-email → reload nginx
+#
+set -euo pipefail
 
-# OmniTools Upgrade Script
-# This script pulls the latest code, installs dependencies, builds, and reloads Nginx
-
-set -e
-
-echo "=========================================="
-echo "OmniTools Upgrade Script"
-echo "=========================================="
-
-# Check if script is run with sudo
-if [[ $EUID -ne 0 ]]; then
-   echo "❌ This script must be run with sudo"
-   exit 1
-fi
-
-# Get the directory where the script is located
+APP_NAME="OmniTools"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
 
-echo ""
-echo "📁 Working directory: $SCRIPT_DIR"
-echo ""
+log() { printf '[OmniTools upgrade] %s\n' "$*"; }
+die() { log "错误: $*"; exit 1; }
 
-# Step 1: Pull latest code
-echo "📥 Step 1: Pulling latest code from repository..."
-if git pull; then
-    echo "✅ Code pulled successfully"
-else
-    echo "❌ Failed to pull code"
-    exit 1
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  die "请使用 root 运行: sudo bash upgrade.sh"
 fi
-echo ""
 
-# Step 2: Install dependencies
-echo "📦 Step 2: Installing dependencies..."
-if npm ci; then
-    echo "✅ Dependencies installed successfully"
-else
-    echo "❌ Failed to install dependencies"
-    exit 1
+if [[ ! -f "${SCRIPT_DIR}/package.json" ]]; then
+  die "未找到 ${SCRIPT_DIR}/package.json，请在项目根目录执行"
 fi
+
+cd "${SCRIPT_DIR}"
+
+log "工作目录: ${SCRIPT_DIR}"
 echo ""
 
-# Step 3: Build the project
-echo "🔨 Step 3: Building the project..."
-if npm run build; then
-    echo "✅ Build completed successfully"
-else
-    echo "❌ Build failed"
-    exit 1
+log "拉取最新代码…"
+git pull || die "git pull 失败"
+
+# better-sqlite3 等原生模块需要本机编译
+if [[ -f /etc/debian_version ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq build-essential
 fi
-echo ""
 
-# Step 4: Restart Email Service
-echo "📧 Step 4: Restarting Email Service..."
+log "确保 data/、upload/ 目录存在…"
+install -d -m0755 "${SCRIPT_DIR}/data" "${SCRIPT_DIR}/upload"
+
+log "安装 npm 依赖（npm ci）…"
+if [[ -f package-lock.json ]]; then
+  npm ci
+else
+  npm install
+fi
+
+log "构建前端…"
+npm run build
+
+[[ -f "${SCRIPT_DIR}/dist/index.html" ]] || die "构建失败：未生成 dist/index.html"
+
+log "重启邮件/API 服务 omnitools-email…"
 if systemctl is-enabled omnitools-email >/dev/null 2>&1; then
-    if systemctl restart omnitools-email; then
-        echo "✅ Email service restarted successfully"
-    else
-        echo "⚠️  Failed to restart email service"
-    fi
+  systemctl restart omnitools-email
+  log "omnitools-email 已重启"
 else
-    echo "⚠️  Email service not installed (omnitools-email)"
+  log "未检测到 omnitools-email（若尚未运行过 install.sh，请先执行安装脚本）"
 fi
-echo ""
 
-# Step 5: Reload Nginx
-echo "🔄 Step 5: Reloading Nginx..."
-if systemctl reload nginx; then
-    echo "✅ Nginx reloaded successfully"
+log "重载 Nginx…"
+if systemctl is-active nginx >/dev/null 2>&1; then
+  nginx -t
+  systemctl reload nginx
 else
-    echo "⚠️  Failed to reload Nginx (may not be running or installed)"
+  log "Nginx 未运行或未安装，已跳过 reload"
 fi
-echo ""
 
-echo "=========================================="
-echo "✨ Upgrade completed successfully!"
-echo "=========================================="
+echo ""
+log "完成。"
+log "  SQLite: ${SCRIPT_DIR}/data/omnitools.sqlite"
+log "  上传:   ${SCRIPT_DIR}/upload/"

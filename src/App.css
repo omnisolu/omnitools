@@ -450,6 +450,17 @@
   margin-bottom: 0.85rem;
 }
 
+.admin-smtp-banner {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .admin-code {
   font-size: 0.88em;
   padding: 0.1rem 0.35rem;
