@@ -81,7 +81,10 @@ install -d -m0755 "${APP_DIR}/data" "${APP_DIR}/upload"
 log "安装 npm 依赖并构建 ${APP_NAME}…"
 cd "${APP_DIR}"
 if [[ -f package-lock.json ]]; then
-  npm ci
+  if ! npm ci; then
+    log "npm ci 失败（package-lock.json 与 package.json 不同步），改用 npm install…"
+    npm install
+  fi
 else
   npm install
 fi

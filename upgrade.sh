@@ -4,7 +4,7 @@
 # 用法（需 root）: sudo bash upgrade.sh
 # 请在项目根目录执行（与 package.json 同级）。
 #
-# 会执行：git pull → 确保编译依赖与 data/upload 目录 → npm ci → build →
+# 会执行：git pull → 确保编译依赖与 data/upload 目录 → npm ci（失败则 npm install）→ build →
 #       重启 omnitools-email → reload nginx
 #
 set -euo pipefail
@@ -41,9 +41,12 @@ fi
 log "确保 data/、upload/ 目录存在…"
 install -d -m0755 "${SCRIPT_DIR}/data" "${SCRIPT_DIR}/upload"
 
-log "安装 npm 依赖（npm ci）…"
+log "安装 npm 依赖…"
 if [[ -f package-lock.json ]]; then
-  npm ci
+  if ! npm ci; then
+    log "npm ci 失败（package-lock.json 与 package.json 不同步），改用 npm install…"
+    npm install
+  fi
 else
   npm install
 fi
