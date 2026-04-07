@@ -2,9 +2,34 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import nodemailer from "nodemailer";
+import fs from "fs";
+import fsPromises from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+import {
+  createExpenseDb,
+  allocateNextReimbursementCode,
+  insertReimbursementSubmission,
+  getAllReimbursementsForApi,
+} from "./expense-sqlite.mjs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.join(__dirname, "..");
 
 const PORT = Number(process.env.PORT) || 3001;
+const UPLOAD_DIR = path.resolve(
+  process.env.OMNITOOLS_UPLOAD_DIR || path.join(ROOT_DIR, "upload")
+);
+
+const { db: expenseDb, dbPath: expenseDbPath } = createExpenseDb(ROOT_DIR);
+
 const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+const submitUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
@@ -12,6 +37,13 @@ const upload = multer({
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "512kb" }));
+
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+function sanitizeFilename(name) {
+  const base = (name || "file").replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return base.slice(0, 180) || "file";
+}
 
 function createTransportFromSmtp(smtp) {
   const port = Number(smtp.port) || 587;
@@ -64,6 +96,124 @@ app.post("/api/test-smtp", async (req, res) => {
   }
 });
 
+function validateSubmitManifest(manifest, attachmentCount) {
+  if (!manifest || typeof manifest !== "object") {
+    return "缺少 manifest 元数据";
+  }
+  if (!manifest.header || typeof manifest.header !== "object") {
+    return "manifest.header 无效";
+  }
+  if (!Array.isArray(manifest.lines) || manifest.lines.length === 0) {
+    return "manifest.lines 不能为空";
+  }
+  let sum = 0;
+  for (const line of manifest.lines) {
+    const c = Number(line?.attachmentCount);
+    if (!Number.isFinite(c) || c < 0) {
+      return "明细 attachmentCount 无效";
+    }
+    sum += c;
+  }
+  if (sum !== attachmentCount) {
+    return `附件数量（${attachmentCount}）与明细 manifest 不一致（期望 ${sum}）`;
+  }
+  return null;
+}
+
+app.post(
+  "/api/submit-reimbursement",
+  submitUpload.fields([
+    { name: "pdf", maxCount: 1 },
+    { name: "attachments", maxCount: 500 },
+  ]),
+  async (req, res) => {
+    let code = null;
+    let dir = null;
+    try {
+      const pdfPart = req.files?.pdf?.[0];
+      if (!pdfPart?.buffer?.length) {
+        res.status(400).json({ error: "缺少合并后的 PDF（merged.pdf）" });
+        return;
+      }
+      const attachmentParts = req.files?.attachments || [];
+      let manifest;
+      try {
+        manifest = JSON.parse(req.body?.manifest || "{}");
+      } catch {
+        res.status(400).json({ error: "manifest 不是合法 JSON" });
+        return;
+      }
+      const errMsg = validateSubmitManifest(manifest, attachmentParts.length);
+      if (errMsg) {
+        res.status(400).json({ error: errMsg });
+        return;
+      }
+
+      code = await allocateNextReimbursementCode(expenseDb, UPLOAD_DIR);
+      dir = path.join(UPLOAD_DIR, code);
+      await fsPromises.mkdir(dir, { recursive: true });
+      await fsPromises.writeFile(path.join(dir, "merged.pdf"), pdfPart.buffer);
+
+      const receiptFiles = [];
+      for (let i = 0; i < attachmentParts.length; i++) {
+        const f = attachmentParts[i];
+        const safe = sanitizeFilename(f.originalname);
+        const fname = `receipt-${String(i + 1).padStart(3, "0")}-${safe}`;
+        await fsPromises.writeFile(path.join(dir, fname), f.buffer);
+        receiptFiles.push({
+          storedFilename: fname,
+          originalFilename: f.originalname || fname,
+        });
+      }
+
+      const lines = manifest.lines.map((line) => ({
+        expenseLineId: String(line.expenseLineId),
+        date: String(line.date),
+        description: String(line.description),
+        category: String(line.category),
+        lineCurrency: String(line.lineCurrency),
+        exchangeRate: Number(line.exchangeRate),
+        gst: Number(line.gst),
+        grossAmount: Number(line.grossAmount),
+        attachmentCount: Number(line.attachmentCount),
+      }));
+
+      insertReimbursementSubmission(expenseDb, {
+        id: code,
+        createdAt: new Date().toISOString(),
+        header: manifest.header,
+        cashAdvance: Number(manifest.cashAdvance) || 0,
+        managerName: String(manifest.managerName ?? ""),
+        businessPurpose: String(manifest.businessPurpose ?? ""),
+        lines,
+        receiptFiles,
+      });
+
+      res.json({ ok: true, reimbursementId: code, uploadPath: `upload/${code}` });
+    } catch (e) {
+      console.error(e);
+      if (code && dir) {
+        try {
+          await fsPromises.rm(dir, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+      res.status(500).json({ error: e.message || "保存失败" });
+    }
+  }
+);
+
+app.get("/api/reimbursements", (_req, res) => {
+  try {
+    const list = getAllReimbursementsForApi(expenseDb);
+    res.json({ ok: true, data: list });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
 app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
   const to = (req.body.to || "").trim();
   let smtp;
@@ -107,4 +257,6 @@ app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
 
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`OmniTools email API listening on http://127.0.0.1:${PORT}`);
+  console.log(`Expense uploads directory: ${UPLOAD_DIR}`);
+  console.log(`Expense SQLite database: ${expenseDbPath}`);
 });

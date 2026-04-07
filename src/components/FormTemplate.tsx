@@ -9,6 +9,8 @@ export interface FormTemplateProps {
   cashAdvance: number;
   businessPurpose?: string;
   managerName?: string;
+  /** 提交后由服务器分配的编号 EXPYYMMXX */
+  reimbursementCode?: string | null;
 }
 
 function formatDate(iso: string): string {
@@ -33,15 +35,14 @@ function needsFxColumns(base: string, expenses: ExpenseLine[]): boolean {
   return expenses.some((e) => !currenciesMatch(e.lineCurrency, b));
 }
 
-const META_ROWS = 6;
-
 const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
   function FormTemplate(
-    { header, expenses, cashAdvance, businessPurpose, managerName },
+    { header, expenses, cashAdvance, businessPurpose, managerName, reimbursementCode },
     ref
   ) {
     const baseCode = normalizeCurrency(header.baseCurrency);
     const showFx = needsFxColumns(header.baseCurrency, expenses);
+    const metaRows = reimbursementCode ? 7 : 6;
 
     const subtotalBase = expenses.reduce(
       (s, e) => s + toBase(e.grossAmount, e.exchangeRate),
@@ -70,7 +71,7 @@ const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
               <td className="form-template__meta-value">
                 {header.employeeName.trim() || "—"}
               </td>
-              <td className="form-template__period" rowSpan={META_ROWS}>
+              <td className="form-template__period" rowSpan={metaRows}>
                 <div className="form-template__period-title">Expense Period</div>
                 <div className="form-template__period-fields">
                   <div>
@@ -84,6 +85,14 @@ const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
                 </div>
               </td>
             </tr>
+            {reimbursementCode ? (
+              <tr>
+                <th scope="row" className="form-template__meta-label">
+                  Submission No.
+                </th>
+                <td className="form-template__meta-value">{reimbursementCode}</td>
+              </tr>
+            ) : null}
             <tr>
               <th scope="row" className="form-template__meta-label">
                 Manager Name

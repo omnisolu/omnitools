@@ -149,6 +149,14 @@
   font-size: 0.875rem;
 }
 
+.file-name-list {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  max-width: 100%;
+}
+
 .file-name {
   font-size: 0.85rem;
   color: var(--muted);

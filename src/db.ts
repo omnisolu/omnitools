@@ -1,9 +1,7 @@
-import type { ExpenseLine, HeaderInfo, SmtpSettings } from "./types";
+import type { SmtpSettings } from "./types";
 
 const DB_NAME = "OmniToolsExpenseDb";
-const DB_VERSION = 2;
-const STORE_REIMBURSEMENTS = "reimbursements";
-const STORE_EXPENSE_LINES = "expenseLines";
+const DB_VERSION = 4;
 const STORE_SETTINGS = "settings";
 
 interface SettingsRow {
@@ -11,43 +9,23 @@ interface SettingsRow {
   value: SmtpSettings;
 }
 
-export interface ReimbursementRecord {
-  id: string;
-  createdAt: string;
-  header: HeaderInfo;
-  cashAdvance: number;
-  managerName: string;
-  businessPurpose: string;
-}
-
-export interface ExpenseLineRecord {
-  id: string;
-  reimbursementId: string;
-  date: string;
-  description: string;
-  category: string;
-  lineCurrency: string;
-  exchangeRate: number;
-  gst: number;
-  grossAmount: number;
-  fileName: string;
-  fileType: string;
-  fileBlob: Blob;
-}
-
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_REIMBURSEMENTS)) {
-        db.createObjectStore(STORE_REIMBURSEMENTS, { keyPath: "id" });
+      const oldVersion = event.oldVersion;
+
+      if (oldVersion < 4) {
+        if (db.objectStoreNames.contains("reimbursements")) {
+          db.deleteObjectStore("reimbursements");
+        }
+        if (db.objectStoreNames.contains("expenseLines")) {
+          db.deleteObjectStore("expenseLines");
+        }
       }
-      if (!db.objectStoreNames.contains(STORE_EXPENSE_LINES)) {
-        const store = db.createObjectStore(STORE_EXPENSE_LINES, { keyPath: "id" });
-        store.createIndex("reimbursementId", "reimbursementId", { unique: false });
-      }
+
       if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
         db.createObjectStore(STORE_SETTINGS, { keyPath: "key" });
       }
@@ -74,52 +52,6 @@ function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-export async function saveReimbursement(options: {
-  id: string;
-  header: HeaderInfo;
-  cashAdvance: number;
-  managerName: string;
-  businessPurpose: string;
-  expenses: ExpenseLine[];
-}): Promise<void> {
-  const db = await openDatabase();
-  const tx = db.transaction([STORE_REIMBURSEMENTS, STORE_EXPENSE_LINES], "readwrite");
-  const reimbursements = tx.objectStore(STORE_REIMBURSEMENTS);
-  const expenseLines = tx.objectStore(STORE_EXPENSE_LINES);
-
-  const record: ReimbursementRecord = {
-    id: options.id,
-    createdAt: new Date().toISOString(),
-    header: options.header,
-    cashAdvance: options.cashAdvance,
-    managerName: options.managerName,
-    businessPurpose: options.businessPurpose,
-  };
-
-  reimbursements.put(record);
-
-  for (const expense of options.expenses) {
-    const expenseRecord: ExpenseLineRecord = {
-      id: expense.id,
-      reimbursementId: options.id,
-      date: expense.date,
-      description: expense.description,
-      category: expense.category,
-      lineCurrency: expense.lineCurrency,
-      exchangeRate: expense.exchangeRate,
-      gst: expense.gst,
-      grossAmount: expense.grossAmount,
-      fileName: expense.file.name,
-      fileType: expense.file.type,
-      fileBlob: new Blob([expense.file], { type: expense.file.type }),
-    };
-    expenseLines.put(expenseRecord);
-  }
-
-  await transactionComplete(tx);
-  db.close();
-}
-
 export async function getSmtpSettings(): Promise<SmtpSettings | null> {
   const db = await openDatabase();
   const tx = db.transaction(STORE_SETTINGS, "readonly");
@@ -137,35 +69,4 @@ export async function saveSmtpSettings(settings: SmtpSettings): Promise<void> {
   tx.objectStore(STORE_SETTINGS).put(row);
   await transactionComplete(tx);
   db.close();
-}
-
-export async function getAllReimbursementData(): Promise<
-  Array<{ reimbursement: ReimbursementRecord; expenses: ExpenseLineRecord[] }>
-> {
-  const db = await openDatabase();
-  const tx = db.transaction([STORE_REIMBURSEMENTS, STORE_EXPENSE_LINES], "readonly");
-  const reimbursements = tx.objectStore(STORE_REIMBURSEMENTS);
-  const expenseLines = tx.objectStore(STORE_EXPENSE_LINES);
-
-  const [reimbursementList, expenseLineList] = await Promise.all([
-    promisifyRequest<ReimbursementRecord[]>(reimbursements.getAll()),
-    promisifyRequest<ExpenseLineRecord[]>(expenseLines.getAll()),
-  ]);
-
-  await transactionComplete(tx);
-  db.close();
-
-  const expenseByReimbursement = new Map<string, ExpenseLineRecord[]>();
-  for (const expense of expenseLineList) {
-    const list = expenseByReimbursement.get(expense.reimbursementId) || [];
-    list.push(expense);
-    expenseByReimbursement.set(expense.reimbursementId, list);
-  }
-
-  return reimbursementList
-    .map((reimbursement) => ({
-      reimbursement,
-      expenses: expenseByReimbursement.get(reimbursement.id) || [],
-    }))
-    .sort((a, b) => b.reimbursement.createdAt.localeCompare(a.reimbursement.createdAt));
 }

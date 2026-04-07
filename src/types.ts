@@ -37,5 +37,6 @@ export interface ExpenseLine {
   exchangeRate: number;
   gst: number;
   grossAmount: number;
-  file: File;
+  /** 该行关联的收据附件（至少一张） */
+  files: File[];
 }

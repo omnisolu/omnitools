@@ -2,6 +2,8 @@ import type { ExpenseLine } from "../types";
 import "./AttachmentGallery.css";
 
 export interface AttachmentItem {
+  /** 稳定键（同一明细多附件时唯一） */
+  itemKey: string;
   expenseId: string;
   label: string;
   url: string;
@@ -18,7 +20,7 @@ export default function AttachmentGallery({ items }: { items: AttachmentItem[] }
       </p>
       <ul className="attachment-gallery__list">
         {items.map((item) => (
-          <li key={item.expenseId} className="attachment-gallery__item">
+          <li key={item.itemKey} className="attachment-gallery__item">
             <div className="attachment-gallery__caption">{item.label}</div>
             {item.isPdf ? (
               <iframe
@@ -42,14 +44,22 @@ export default function AttachmentGallery({ items }: { items: AttachmentItem[] }
 
 export function attachmentItemsFromExpenses(
   expenses: ExpenseLine[],
-  urls: Map<string, string>
+  urls: Map<string, string[]>
 ): AttachmentItem[] {
-  return expenses.map((e) => ({
-    expenseId: e.id,
-    label: `${e.date} · ${e.description} · ${e.file.name}`,
-    url: urls.get(e.id) ?? "",
-    isPdf:
-      e.file.type === "application/pdf" ||
-      e.file.name.toLowerCase().endsWith(".pdf"),
-  }));
+  const items: AttachmentItem[] = [];
+  for (const e of expenses) {
+    const urlList = urls.get(e.id) ?? [];
+    e.files.forEach((file, idx) => {
+      items.push({
+        itemKey: `${e.id}-${idx}`,
+        expenseId: e.id,
+        label: `${e.date} · ${e.description} · ${file.name}`,
+        url: urlList[idx] ?? "",
+        isPdf:
+          file.type === "application/pdf" ||
+          file.name.toLowerCase().endsWith(".pdf"),
+      });
+    });
+  }
+  return items;
 }

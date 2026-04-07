@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
-import {
-  getAllReimbursementData,
-  getSmtpSettings,
-  saveSmtpSettings,
-  ReimbursementRecord,
-  ExpenseLineRecord,
-} from "./db";
+import { getSmtpSettings, saveSmtpSettings } from "./db";
+import type { ReimbursementRecord, ExpenseLineRecord } from "./records";
 import type { SmtpSettings } from "./types";
-import { sendSmtpTestEmail } from "./emailApi";
+import { fetchReimbursementsFromServer, sendSmtpTestEmail } from "./emailApi";
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -62,7 +57,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       setLoading(true);
       setError(null);
       try {
-        const list = await getAllReimbursementData();
+        const list = await fetchReimbursementsFromServer();
         if (!canceled) {
           setRecords(list);
         }
@@ -346,7 +341,9 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
                       <td className="num">{expense.exchangeRate.toFixed(4)}</td>
                       <td className="num">{expense.grossAmount.toFixed(2)}</td>
                       <td className="num">{(expense.grossAmount * expense.exchangeRate).toFixed(2)}</td>
-                      <td>{expense.fileName}</td>
+                      <td>
+                        {expense.attachments.map((a) => a.fileName).join("； ")}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

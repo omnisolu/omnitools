@@ -80,33 +80,35 @@ export async function buildMergedReimbursementPdf(
   formPages.forEach((p) => merged.addPage(p));
 
   for (const e of expenses) {
-    if (isPdfFile(e.file)) {
-      try {
-        const raw = await e.file.arrayBuffer();
-        const src = await PDFDocument.load(raw, { ignoreEncryption: true });
-        const pages = await merged.copyPages(src, src.getPageIndices());
-        pages.forEach((p) => merged.addPage(p));
-      } catch {
-        // skip unreadable PDF
-      }
-    } else {
-      try {
-        const pngBytes = await rasterFileToPngBytes(e.file);
-        const image = await merged.embedPng(pngBytes);
-        const pageSize: [number, number] = [595.28, 841.89];
-        const page = merged.addPage(pageSize);
-        const iw = image.width;
-        const ih = image.height;
-        const pw = pageSize[0] - 72;
-        const ph = pageSize[1] - 72;
-        const scale = Math.min(pw / iw, ph / ih);
-        const w = iw * scale;
-        const h = ih * scale;
-        const x = (pageSize[0] - w) / 2;
-        const y = (pageSize[1] - h) / 2;
-        page.drawImage(image, { x, y, width: w, height: h });
-      } catch {
-        // skip unsupported image
+    for (const file of e.files) {
+      if (isPdfFile(file)) {
+        try {
+          const raw = await file.arrayBuffer();
+          const src = await PDFDocument.load(raw, { ignoreEncryption: true });
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          pages.forEach((p) => merged.addPage(p));
+        } catch {
+          // skip unreadable PDF
+        }
+      } else {
+        try {
+          const pngBytes = await rasterFileToPngBytes(file);
+          const image = await merged.embedPng(pngBytes);
+          const pageSize: [number, number] = [595.28, 841.89];
+          const page = merged.addPage(pageSize);
+          const iw = image.width;
+          const ih = image.height;
+          const pw = pageSize[0] - 72;
+          const ph = pageSize[1] - 72;
+          const scale = Math.min(pw / iw, ph / ih);
+          const w = iw * scale;
+          const h = ih * scale;
+          const x = (pageSize[0] - w) / 2;
+          const y = (pageSize[1] - h) / 2;
+          page.drawImage(image, { x, y, width: w, height: h });
+        } catch {
+          // skip unsupported image
+        }
       }
     }
   }

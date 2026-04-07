@@ -7,8 +7,8 @@ import { COMPANY_PRESETS } from "./company";
 import { COMMON_CURRENCY_CODES, normalizeCurrency } from "./currencies";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
-import { getSmtpSettings, saveReimbursement } from "./db";
-import { sendExpensePdfEmail } from "./emailApi";
+import { getSmtpSettings } from "./db";
+import { sendExpensePdfEmail, submitExpenseReimbursementToServer } from "./emailApi";
 import AdminPanel from "./AdminPanel";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
@@ -65,7 +65,7 @@ export default function App() {
   const [lineExchangeRate, setLineExchangeRate] = useState("1");
   const [lineGst, setLineGst] = useState("");
   const [lineGross, setLineGross] = useState("");
-  const [lineFile, setLineFile] = useState<File | null>(null);
+  const [lineFiles, setLineFiles] = useState<File[]>([]);
   const [fileTick, setFileTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,10 +75,14 @@ export default function App() {
   const [dbBusy, setDbBusy] = useState(false);
   const [dbMessage, setDbMessage] = useState<string | null>(null);
   const [blobUrlByExpenseId, setBlobUrlByExpenseId] = useState<
-    Map<string, string>
+    Map<string, string[]>
   >(() => new Map());
   const [pdfBusy, setPdfBusy] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
+  /** 本次确认页提交成功后由服务器分配的 EXPYYMMXX */
+  const [submittedReimbursementId, setSubmittedReimbursementId] = useState<
+    string | null
+  >(null);
 
   const formTemplateRef = useRef<HTMLDivElement>(null);
 
@@ -116,8 +120,8 @@ export default function App() {
     gstNum !== null &&
     grossNum !== null &&
     grossNum >= gstNum &&
-    lineFile !== null &&
-    isAllowedAttachment(lineFile);
+    lineFiles.length > 0 &&
+    lineFiles.every((f) => isAllowedAttachment(f));
 
   const canFinish = expenses.length > 0;
 
@@ -134,8 +138,10 @@ export default function App() {
     return Number.isFinite(n) && n >= 0 ? n : 0;
   }, [cashAdvanceStr]);
 
-  const revokeBlobUrls = useCallback((m: Map<string, string>) => {
-    m.forEach((url) => URL.revokeObjectURL(url));
+  const revokeBlobUrls = useCallback((m: Map<string, string[]>) => {
+    m.forEach((urls) => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    });
   }, []);
 
   useEffect(() => {
@@ -150,7 +156,7 @@ export default function App() {
     setLineExchangeRate("1");
     setLineGst("");
     setLineGross("");
-    setLineFile(null);
+    setLineFiles([]);
     setFileTick((k) => k + 1);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -169,7 +175,7 @@ export default function App() {
   function appendExpense() {
     if (
       !lineValid ||
-      !lineFile ||
+      lineFiles.length === 0 ||
       gstNum === null ||
       grossNum === null ||
       rateNum === null
@@ -184,21 +190,28 @@ export default function App() {
       exchangeRate: rateNum,
       gst: gstNum,
       grossAmount: grossNum,
-      file: lineFile,
+      files: [...lineFiles],
     };
     setExpenses((prev) => [...prev, row]);
     resetLineForm();
   }
 
   function openConfirm() {
-    const m = new Map<string, string>();
-    expenses.forEach((e) => m.set(e.id, URL.createObjectURL(e.file)));
+    setSubmittedReimbursementId(null);
+    const m = new Map<string, string[]>();
+    expenses.forEach((e) =>
+      m.set(
+        e.id,
+        e.files.map((f) => URL.createObjectURL(f))
+      )
+    );
     setBlobUrlByExpenseId(m);
     setConfirmOpen(true);
   }
 
   function closeConfirm() {
     setBlobUrlByExpenseId(new Map());
+    setSubmittedReimbursementId(null);
     setConfirmOpen(false);
   }
 
@@ -227,7 +240,11 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Expense-Reimbursement-${header.employeeName.trim().replace(/\s+/g, "_") || "draft"}.pdf`;
+      const slug =
+        submittedReimbursementId ||
+        header.employeeName.trim().replace(/\s+/g, "_") ||
+        "draft";
+      a.download = `${slug}-merged.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -261,14 +278,17 @@ export default function App() {
     setEmailBusy(true);
     try {
       const bytes = await buildMergedReimbursementPdf(el, expenses);
-      const baseName = header.employeeName.trim().replace(/\s+/g, "_") || "draft";
-      const filename = `Expense-Reimbursement-${baseName}.pdf`;
+      const baseName =
+        submittedReimbursementId ||
+        header.employeeName.trim().replace(/\s+/g, "_") ||
+        "draft";
+      const filename = `${baseName}-merged.pdf`;
       await sendExpensePdfEmail({
         smtp,
         to,
         pdfBytes: bytes,
         filename,
-        subject: `报销单 PDF - ${header.employeeName.trim() || "draft"}`,
+        subject: `报销单 PDF ${submittedReimbursementId ? `${submittedReimbursementId} · ` : ""}${header.employeeName.trim() || "draft"}`,
       });
       window.alert("合并 PDF 已发送到邮箱。");
     } catch (e) {
@@ -283,21 +303,46 @@ export default function App() {
   }
 
   async function handleSaveToDatabase() {
+    const el = formTemplateRef.current;
+    if (!el) {
+      setDbMessage("无法生成 PDF：模板未就绪。");
+      return;
+    }
     setDbBusy(true);
     setDbMessage(null);
     try {
-      await saveReimbursement({
-        id: randomId(),
-        header,
-        cashAdvance: cashAdvanceNum,
-        managerName,
-        businessPurpose,
+      const pdfBytes = await buildMergedReimbursementPdf(el, expenses);
+      const { reimbursementId } = await submitExpenseReimbursementToServer({
+        pdfBytes,
         expenses,
+        manifest: {
+          header,
+          cashAdvance: cashAdvanceNum,
+          managerName,
+          businessPurpose,
+          lines: expenses.map((e) => ({
+            expenseLineId: e.id,
+            date: e.date,
+            description: e.description,
+            category: e.category,
+            lineCurrency: e.lineCurrency,
+            exchangeRate: e.exchangeRate,
+            gst: e.gst,
+            grossAmount: e.grossAmount,
+            attachmentCount: e.files.length,
+          })),
+        },
       });
-      setDbMessage("已保存到本地数据库。");
+      setSubmittedReimbursementId(reimbursementId);
+      setDbMessage(
+        `已提交编号 ${reimbursementId}。文件已写入服务器 upload/${reimbursementId}/，报销数据已写入服务端 SQLite。`
+      );
     } catch (error) {
       console.error(error);
-      setDbMessage("保存失败，请确认浏览器支持 IndexedDB。请在支持 IndexedDB 的浏览器中重试。");
+      setDbMessage(
+        (error as Error)?.message ||
+          "提交失败。请确认邮件 API 已启动（npm run dev）且可访问 /api/submit-reimbursement。"
+      );
     } finally {
       setDbBusy(false);
     }
@@ -360,7 +405,10 @@ export default function App() {
               <h2 className="card-title">确认报销单</h2>
               <p className="card-hint">
                 请核对下方模板样式是否与纸质版一致。确认无误后可下载合并 PDF（表格 +
-                全部收据）或使用打印。
+                全部收据）或使用打印。                「保存到数据库」将申请编号{" "}
+                <strong>EXPYYMMXX</strong>，把合并 PDF 与全部收据写入服务器{" "}
+                <code className="admin-code">upload/</code>{" "}
+                下对应文件夹，并将报销明细写入服务端 SQLite。
               </p>
               <div className="confirm-fields field-grid">
                 <label className="field">
@@ -403,6 +451,7 @@ export default function App() {
                 cashAdvance={cashAdvanceNum}
                 managerName={managerName}
                 businessPurpose={businessPurpose}
+                reimbursementCode={submittedReimbursementId}
               />
               <AttachmentGallery items={attachmentItems} />
             </div>
@@ -541,7 +590,7 @@ export default function App() {
                   <p className="card-hint">
                     GST、总金额为<strong>本行币种</strong>金额。汇率表示：基准金额 = 本行金额 ×
                     汇率（1 单位本行币种兑多少{normalizeCurrency(header.baseCurrency) || "基准"}）。
-                    每条须上传附件；信息齐全后「下一个」才可点。
+                    每条至少上传一个附件（可一次选多个文件）；信息齐全后「下一个」才可点。
                   </p>
 
                   <div className="field-grid">
@@ -622,27 +671,40 @@ export default function App() {
                       />
                     </label>
                     <div className="field field-span-2">
-                      <span className="field-label">附件（图片或 PDF）</span>
+                      <span className="field-label">附件（图片或 PDF，可多选）</span>
                       <div className="file-row">
                         <input
                           key={fileTick}
                           ref={fileInputRef}
                           type="file"
+                          multiple
                           accept="image/*,.pdf,application/pdf"
                           className="file-input"
                           onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            setLineFile(f && isAllowedAttachment(f) ? f : null);
-                            if (f && !isAllowedAttachment(f)) {
-                              window.alert("仅支持图片或 PDF 文件。");
-                              e.target.value = "";
+                            const picked = Array.from(e.target.files ?? []);
+                            const valid: File[] = [];
+                            const invalid: string[] = [];
+                            for (const f of picked) {
+                              if (isAllowedAttachment(f)) valid.push(f);
+                              else invalid.push(f.name);
                             }
+                            if (invalid.length) {
+                              window.alert(
+                                `仅支持图片或 PDF 文件。已跳过：${invalid.join("、")}`
+                              );
+                            }
+                            setLineFiles(valid);
+                            if (valid.length === 0) e.target.value = "";
                           }}
                         />
-                        {lineFile && (
-                          <span className="file-name" title={lineFile.name}>
-                            {lineFile.name}
-                          </span>
+                        {lineFiles.length > 0 && (
+                          <ul className="file-name-list">
+                            {lineFiles.map((f) => (
+                              <li key={`${f.name}-${f.size}-${f.lastModified}`} className="file-name" title={f.name}>
+                                {f.name}
+                              </li>
+                            ))}
+                          </ul>
                         )}
                       </div>
                     </div>
@@ -686,8 +748,13 @@ export default function App() {
                               <td className="num">
                                 {(e.grossAmount * e.exchangeRate).toFixed(2)}
                               </td>
-                              <td className="attach-cell" title={e.file.name}>
-                                {e.file.name}
+                              <td
+                                className="attach-cell"
+                                title={e.files.map((f) => f.name).join("\n")}
+                              >
+                                {e.files.length === 1
+                                  ? e.files[0].name
+                                  : `${e.files.length} 个文件`}
                               </td>
                             </tr>
                           ))}
@@ -768,10 +835,14 @@ export default function App() {
             <button
               type="button"
               className="btn btn--ghost"
-              disabled={dbBusy}
+              disabled={dbBusy || submittedReimbursementId !== null}
               onClick={() => void handleSaveToDatabase()}
             >
-              {dbBusy ? "正在保存…" : "保存到数据库"}
+              {dbBusy
+                ? "正在提交…"
+                : submittedReimbursementId
+                  ? `已提交 ${submittedReimbursementId}`
+                  : "保存到数据库"}
             </button>
             <button
               type="button"
