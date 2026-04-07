@@ -219,6 +219,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+.currency-line-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.currency-line-field-input {
+  width: 100%;
+}
+
 .file-row {
   display: flex;
   flex-wrap: wrap;
@@ -297,6 +308,11 @@
 .expense-table th {
   background: #eef2f7;
   font-weight: 600;
+}
+
+.expense-table-row--editing td {
+  background: #f0f7ff;
+  box-shadow: inset 0 0 0 1px rgba(30, 77, 140, 0.2);
 }
 
 .expense-table .num {

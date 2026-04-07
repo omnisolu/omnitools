@@ -4,7 +4,11 @@ import AttachmentGallery, {
 } from "./components/AttachmentGallery";
 import FormTemplate from "./components/FormTemplate";
 import { COMPANY_PRESETS } from "./company";
-import { COMMON_CURRENCY_CODES, normalizeCurrency } from "./currencies";
+import {
+  COMMON_CURRENCY_CODES,
+  isCommonCurrencyCode,
+  normalizeCurrency,
+} from "./currencies";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
 import {
@@ -63,16 +67,22 @@ export default function App() {
   const [isAdminView, setIsAdminView] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [header, setHeader] = useState<HeaderInfo>(emptyHeader);
+  /** 基准币种：选「其他」时保持下拉为「其他」分支 */
+  const [baseCurrencyPickCustom, setBaseCurrencyPickCustom] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseLine[]>([]);
 
   const [lineDate, setLineDate] = useState("");
   const [lineDescription, setLineDescription] = useState("");
   const [lineCategory, setLineCategory] = useState("");
   const [lineCurrency, setLineCurrency] = useState("");
+  /** 币种为空时用户选了「其他」：用于下拉保持「其他」而非 datalist 式无法再次展开 */
+  const [lineCurrencyPickCustom, setLineCurrencyPickCustom] = useState(false);
   const [lineExchangeRate, setLineExchangeRate] = useState("1");
   const [lineGst, setLineGst] = useState("");
   const [lineGross, setLineGross] = useState("");
   const [lineFiles, setLineFiles] = useState<File[]>([]);
+  /** 正在编辑列表中的某条（null 表示当前为「新的一条」草稿） */
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [fileTick, setFileTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,6 +128,23 @@ export default function App() {
   const grossNum = parseMoney(lineGross);
   const rateNum = parsePositiveRate(lineExchangeRate);
 
+  const lineCurrencySelectValue = useMemo(() => {
+    if (lineCurrencyPickCustom) return "__custom__";
+    const t = lineCurrency.trim();
+    if (!t) return "";
+    if (isCommonCurrencyCode(lineCurrency)) return normalizeCurrency(lineCurrency);
+    return "__custom__";
+  }, [lineCurrency, lineCurrencyPickCustom]);
+
+  const baseCurrencySelectValue = useMemo(() => {
+    if (baseCurrencyPickCustom) return "__custom__";
+    const t = header.baseCurrency.trim();
+    if (!t) return "";
+    if (isCommonCurrencyCode(header.baseCurrency))
+      return normalizeCurrency(header.baseCurrency);
+    return "__custom__";
+  }, [header.baseCurrency, baseCurrencyPickCustom]);
+
   const lineValid =
     Boolean(lineDate) &&
     lineDescription.trim().length > 0 &&
@@ -156,7 +183,64 @@ export default function App() {
     return () => revokeBlobUrls(blobUrlByExpenseId);
   }, [blobUrlByExpenseId, revokeBlobUrls]);
 
-  function resetLineForm() {
+  function buildRowFromForm(id: string): ExpenseLine {
+    return {
+      id,
+      date: lineDate,
+      description: lineDescription.trim(),
+      category: lineCategory,
+      lineCurrency: normalizeCurrency(lineCurrency),
+      exchangeRate: rateNum!,
+      gst: gstNum!,
+      grossAmount: grossNum!,
+      files: [...lineFiles],
+    };
+  }
+
+  function expenseMatchesForm(e: ExpenseLine): boolean {
+    if (e.date !== lineDate) return false;
+    if (e.description.trim() !== lineDescription.trim()) return false;
+    if (e.category !== lineCategory) return false;
+    if (normalizeCurrency(e.lineCurrency) !== normalizeCurrency(lineCurrency)) return false;
+    if (Math.abs(e.exchangeRate - (rateNum ?? 0)) > 1e-9) return false;
+    if (Math.abs(e.gst - (gstNum ?? NaN)) > 1e-6) return false;
+    if (Math.abs(e.grossAmount - (grossNum ?? NaN)) > 1e-6) return false;
+    if (e.files.length !== lineFiles.length) return false;
+    for (let i = 0; i < e.files.length; i++) {
+      if (fileKey(e.files[i]) !== fileKey(lineFiles[i])) return false;
+    }
+    return true;
+  }
+
+  function loadExpenseIntoForm(e: ExpenseLine) {
+    setLineDate(e.date);
+    setLineDescription(e.description);
+    setLineCategory(e.category);
+    setLineCurrency(e.lineCurrency);
+    setLineExchangeRate(String(e.exchangeRate));
+    setLineGst(String(e.gst));
+    setLineGross(String(e.grossAmount));
+    setLineFiles([...e.files]);
+    setLineCurrencyPickCustom(!isCommonCurrencyCode(e.lineCurrency));
+    setEditingExpenseId(e.id);
+    setFileTick((k) => k + 1);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function hasLineDraft(): boolean {
+    if (lineDate) return true;
+    if (lineDescription.trim()) return true;
+    if (lineCategory) return true;
+    if (lineFiles.length > 0) return true;
+    if (lineGst.trim() !== "") return true;
+    if (lineGross.trim() !== "") return true;
+    if (lineExchangeRate.trim() !== "" && lineExchangeRate !== "1") return true;
+    const bc = normalizeCurrency(header.baseCurrency);
+    if (lineCurrency.trim() && normalizeCurrency(lineCurrency) !== bc) return true;
+    return false;
+  }
+
+  const resetLineForm = useCallback(() => {
     setLineDate("");
     setLineDescription("");
     setLineCategory("");
@@ -166,11 +250,22 @@ export default function App() {
     setLineGross("");
     setLineFiles([]);
     setFileTick((k) => k + 1);
+    setLineCurrencyPickCustom(false);
+    setEditingExpenseId(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }
+  }, [header.baseCurrency]);
+
+  /** 列表中的行被删后，若仍指向该行则清空表单 */
+  useEffect(() => {
+    if (editingExpenseId && !expenses.some((e) => e.id === editingExpenseId)) {
+      resetLineForm();
+    }
+  }, [expenses, editingExpenseId, resetLineForm]);
 
   function goNextStep() {
     if (!headerValid) return;
+    setEditingExpenseId(null);
+    setLineCurrencyPickCustom(false);
     // 从步骤 1 再次进入步骤 2 时，保留已填写中的币种与汇率（避免「上一个」改表头后点「下一个」被重置）
     setLineCurrency((prev) => {
       const t = prev.trim();
@@ -180,11 +275,68 @@ export default function App() {
     setStep(2);
   }
 
-  function goPreviousStep() {
-    setStep(1);
+  /** 步骤 2：在已添加明细中反向浏览；在编辑上一条时回到步骤 1 */
+  function handleStep2Previous() {
+    if (step !== 2) return;
+
+    let working = [...expenses];
+
+    if (editingExpenseId !== null) {
+      const idx = working.findIndex((e) => e.id === editingExpenseId);
+      if (idx < 0) {
+        resetLineForm();
+        return;
+      }
+      const cur = working[idx];
+      if (!expenseMatchesForm(cur)) {
+        if (lineValid) {
+          working[idx] = buildRowFromForm(cur.id);
+          setExpenses(working);
+        } else if (
+          !window.confirm(
+            "当前修改未通过校验，切换上一条将丢失未保存内容。是否继续？"
+          )
+        ) {
+          return;
+        }
+      }
+
+      if (idx === 0) {
+        resetLineForm();
+        setStep(1);
+        return;
+      }
+      const loadIdx = idx - 1;
+      loadExpenseIntoForm(working[loadIdx]);
+      return;
+    }
+
+    if (working.length === 0) {
+      setStep(1);
+      return;
+    }
+    if (hasLineDraft() && !lineValid) {
+      if (
+        !window.confirm(
+          "当前明细未保存，切换到已添加明细将丢弃当前填写。是否继续？"
+        )
+      ) {
+        return;
+      }
+    } else if (lineValid) {
+      if (
+        !window.confirm(
+          "当前明细已填写完整但未加入列表。切换将丢弃本条，是否继续？"
+        )
+      ) {
+        return;
+      }
+    }
+    const loadIdx = working.length - 1;
+    loadExpenseIntoForm(working[loadIdx]);
   }
 
-  function appendExpense() {
+  function commitLineOrAppend() {
     if (
       !lineValid ||
       lineFiles.length === 0 ||
@@ -193,6 +345,14 @@ export default function App() {
       rateNum === null
     )
       return;
+    if (editingExpenseId !== null) {
+      const row = buildRowFromForm(editingExpenseId);
+      setExpenses((prev) =>
+        prev.map((ex) => (ex.id === editingExpenseId ? row : ex))
+      );
+      resetLineForm();
+      return;
+    }
     const row: ExpenseLine = {
       id: randomId(),
       date: lineDate,
@@ -208,10 +368,10 @@ export default function App() {
     resetLineForm();
   }
 
-  function openConfirm() {
+  function openConfirm(expensesForGallery: ExpenseLine[]) {
     setSubmittedReimbursementId(null);
     const m = new Map<string, string[]>();
-    expenses.forEach((e) =>
+    expensesForGallery.forEach((e) =>
       m.set(
         e.id,
         e.files.map((f) => URL.createObjectURL(f))
@@ -247,11 +407,24 @@ export default function App() {
 
   function removeExpenseRow(expenseId: string) {
     setExpenses((prev) => prev.filter((e) => e.id !== expenseId));
+    if (editingExpenseId === expenseId) {
+      resetLineForm();
+    }
   }
 
   function handleFinish() {
     if (step !== 2) return;
     if (lineValid) {
+      if (editingExpenseId !== null) {
+        const row = buildRowFromForm(editingExpenseId);
+        const next = expenses.map((ex) =>
+          ex.id === editingExpenseId ? row : ex
+        );
+        setExpenses(next);
+        resetLineForm();
+        openConfirm(next);
+        return;
+      }
       window.alert(
         "当前明细已填写完整但未加入列表。请先点击「下一个」添加本条，或清空后再完成。"
       );
@@ -261,7 +434,7 @@ export default function App() {
       window.alert("请至少添加一条报销明细后再完成。");
       return;
     }
-    openConfirm();
+    openConfirm(expenses);
   }
 
   async function handleDownloadMergedPdf() {
@@ -445,11 +618,6 @@ export default function App() {
         <AdminPanel onClose={() => setIsAdminView(false)} />
       ) : (
         <main className="app-main">
-        <datalist id="currency-presets">
-          {COMMON_CURRENCY_CODES.map((code) => (
-            <option key={code} value={code} />
-          ))}
-        </datalist>
         {confirmOpen ? (
           <>
             <section className="card no-print confirm-panel" aria-label="确认与选项">
@@ -569,19 +737,48 @@ export default function App() {
                     <span className="field-label">
                       基准币种 Base currency（结算币种）
                     </span>
-                    <input
-                      className="field-input"
-                      list="currency-presets"
-                      value={header.baseCurrency}
-                      onChange={(e) =>
-                        setHeader((h) => ({
-                          ...h,
-                          baseCurrency: e.target.value.toUpperCase(),
-                        }))
-                      }
-                      placeholder="如 CAD、USD，或从列表选择"
-                      autoCapitalize="characters"
-                    />
+                    <div className="currency-line-field">
+                      <select
+                        className="field-input"
+                        aria-label="常用基准币种"
+                        value={baseCurrencySelectValue}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "") {
+                            setBaseCurrencyPickCustom(false);
+                            setHeader((h) => ({ ...h, baseCurrency: "" }));
+                          } else if (v === "__custom__") {
+                            setBaseCurrencyPickCustom(true);
+                          } else {
+                            setBaseCurrencyPickCustom(false);
+                            setHeader((h) => ({ ...h, baseCurrency: v }));
+                          }
+                        }}
+                      >
+                        <option value="">请选择</option>
+                        {COMMON_CURRENCY_CODES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                        <option value="__custom__">其他（手动输入）</option>
+                      </select>
+                      {baseCurrencySelectValue === "__custom__" && (
+                        <input
+                          className="field-input currency-line-field-input"
+                          value={header.baseCurrency}
+                          onChange={(e) =>
+                            setHeader((h) => ({
+                              ...h,
+                              baseCurrency: e.target.value.toUpperCase(),
+                            }))
+                          }
+                          placeholder="三字母代码，如 CAD"
+                          autoCapitalize="characters"
+                          spellCheck={false}
+                        />
+                      )}
+                    </div>
                   </label>
                   <label className="field">
                     <span className="field-label">期间自</span>
@@ -648,6 +845,10 @@ export default function App() {
                     成功提交后，服务器会将 PDF 与收据写入{" "}
                     <code className="admin-code">upload/EXPYYMMXX/</code> 正式目录。
                   </p>
+                  <p className="card-hint card-hint--sub">
+                    底部「上一个」从已添加的<strong>最后一条</strong>起载入表单以便修改；再点则载入倒数第二条，依此类推。
+                    编辑中修改在切换前会自动保存（校验通过时）；到第一条后再点「上一个」返回基本信息。
+                  </p>
 
                   <div className="field-grid">
                     <label className="field">
@@ -683,18 +884,47 @@ export default function App() {
                         ))}
                       </select>
                     </label>
-                    <label className="field">
+                    <label className="field field-span-2">
                       <span className="field-label">币种 Line currency</span>
-                      <input
-                        className="field-input"
-                        list="currency-presets"
-                        value={lineCurrency}
-                        onChange={(e) =>
-                          setLineCurrency(e.target.value.toUpperCase())
-                        }
-                        placeholder={normalizeCurrency(header.baseCurrency) || "币种"}
-                        autoCapitalize="characters"
-                      />
+                      <div className="currency-line-field">
+                        <select
+                          className="field-input"
+                          aria-label="常用币种"
+                          value={lineCurrencySelectValue}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "") {
+                              setLineCurrency("");
+                              setLineCurrencyPickCustom(false);
+                            } else if (v === "__custom__") {
+                              setLineCurrencyPickCustom(true);
+                            } else {
+                              setLineCurrencyPickCustom(false);
+                              setLineCurrency(v);
+                            }
+                          }}
+                        >
+                          <option value="">请选择</option>
+                          {COMMON_CURRENCY_CODES.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                          <option value="__custom__">其他（手动输入）</option>
+                        </select>
+                        {lineCurrencySelectValue === "__custom__" && (
+                          <input
+                            className="field-input currency-line-field-input"
+                            value={lineCurrency}
+                            onChange={(e) =>
+                              setLineCurrency(e.target.value.toUpperCase())
+                            }
+                            placeholder="三字母代码，如 KRW"
+                            autoCapitalize="characters"
+                            spellCheck={false}
+                          />
+                        )}
+                      </div>
                     </label>
                     <label className="field">
                       <span className="field-label">汇率 Exchange rate</span>
@@ -816,7 +1046,14 @@ export default function App() {
                         </thead>
                         <tbody>
                           {expenses.map((e) => (
-                            <tr key={e.id}>
+                            <tr
+                              key={e.id}
+                              className={
+                                editingExpenseId === e.id
+                                  ? "expense-table-row expense-table-row--editing"
+                                  : "expense-table-row"
+                              }
+                            >
                               <td>{e.date}</td>
                               <td>{e.description}</td>
                               <td>{e.category}</td>
@@ -882,7 +1119,8 @@ export default function App() {
               <button
                 type="button"
                 className="btn btn--ghost"
-                onClick={goPreviousStep}
+                onClick={handleStep2Previous}
+                title="从最后一条起反向载入编辑；到第一条后再点返回基本信息"
               >
                 上一个
               </button>
@@ -901,9 +1139,14 @@ export default function App() {
                 type="button"
                 className="btn btn--primary"
                 disabled={!lineValid}
-                onClick={appendExpense}
+                title={
+                  editingExpenseId
+                    ? "保存对当前条的修改并清空表单以添加新的一条"
+                    : "将本条加入下方列表"
+                }
+                onClick={commitLineOrAppend}
               >
-                下一个
+                {editingExpenseId ? "保存本条" : "下一个"}
               </button>
             )}
             <button
