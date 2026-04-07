@@ -7,8 +7,11 @@ import { COMPANY_PRESETS } from "./company";
 import { COMMON_CURRENCY_CODES, normalizeCurrency } from "./currencies";
 import { EXPENSE_CATEGORIES } from "./categories";
 import { buildMergedReimbursementPdf } from "./pdf/buildMergedPdf";
-import { getSmtpSettings } from "./db";
-import { sendExpensePdfEmail, submitExpenseReimbursementToServer } from "./emailApi";
+import {
+  getSmtpSettings,
+  sendExpensePdfEmail,
+  submitExpenseReimbursementToServer,
+} from "./emailApi";
 import AdminPanel from "./AdminPanel";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
@@ -373,20 +376,37 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="app-header no-print">
-        <div>
-          <h1 className="app-title">Expense Reimbursement Form</h1>
-          <p className="app-sub">费用报销单</p>
+      <nav className="app-menubar no-print" aria-label="主导航">
+        <div className="app-menubar-inner">
+          <div className="app-menubar-segment app-menubar-segment--left">
+            <span className="app-menubar-logo">OmniTools</span>
+            <span className="app-menubar-tag">
+              {isAdminView ? "后台" : "报销"}
+            </span>
+          </div>
+          <div className="app-menubar-segment app-menubar-segment--right">
+            <span className="app-menubar-company" title={header.companyName.trim() || undefined}>
+              {header.companyName.trim() || "—"}
+            </span>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm app-menubar-admin"
+              onClick={handleAdminToggle}
+            >
+              {isAuthenticated ? (isAdminView ? "返回报销" : "查看后台") : "查看后台"}
+            </button>
+          </div>
         </div>
-        <div className="app-header-right">
-          <div className="app-brand">{header.companyName.trim() || "—"}</div>
-          <button
-            type="button"
-            className="btn btn--ghost app-admin-toggle"
-            onClick={handleAdminToggle}
-          >
-            {isAuthenticated ? (isAdminView ? "返回报销" : "查看后台") : "查看后台"}
-          </button>
+      </nav>
+
+      <header className="app-header no-print">
+        <div className="app-header-titles">
+          <h1 className="app-title">
+            {isAdminView ? "后台管理" : "Expense Reimbursement Form"}
+          </h1>
+          <p className="app-sub">
+            {isAdminView ? "SMTP 与已保存记录" : "费用报销单"}
+          </p>
         </div>
       </header>
 

@@ -64,13 +64,103 @@ npm run build
 
 ## 更新部署
 
-后续更新时，可在项目目录内执行：
+### 使用升级脚本（推荐）
+
+后续更新时，在项目目录内执行：
+
+```bash
+sudo bash upgrade.sh
+```
+
+此脚本会自动完成以下操作：
+1. 拉取最新代码
+2. 安装依赖
+3. 构建前端
+4. 重启邮件服务
+5. 重启 Nginx
+
+### 修复已安装系统
+
+如果已经部署了旧版本（邮件功能不可用），使用修复脚本快速升级：
+
+**对于未启用 SSL 的系统：**
+
+```bash
+cd /path/to/omnitools
+sudo bash fix-email-service.sh
+```
+
+**对于已启用 HTTPS/SSL 的系统：**
+
+使用专门的 nginx 配置更新脚本，它会保留 SSL 设置：
+
+```bash
+cd /path/to/omnitools
+sudo bash update-nginx-proxy.sh /etc/nginx/sites-available/omnitools
+```
+
+或指定你的实际 nginx 配置文件路径：
+```bash
+# 常见路径
+sudo bash update-nginx-proxy.sh /etc/nginx/sites-enabled/default
+sudo bash update-nginx-proxy.sh /etc/nginx/conf.d/omnitools.conf
+```
+
+⚠️ **如果已用 `fix-email-service.sh` 破坏了 SSL，恢复方法：**
+
+```bash
+# 列出备份文件
+ls -la /etc/nginx/sites-available/omnitools.backup.*
+
+# 恢复最新备份（替换时间戳）
+sudo cp /etc/nginx/sites-available/omnitools.backup.1234567890 /etc/nginx/sites-available/omnitools
+
+# 然后运行正确的更新脚本
+sudo bash update-nginx-proxy.sh /etc/nginx/sites-available/omnitools
+```
+
+### 手动更新
+
+或者手动执行这些命令：
 
 ```bash
 sudo git pull
 sudo npm ci
 sudo npm run build
 sudo systemctl reload nginx
+```
+
+## 邮件配置
+
+应用支持通过 SMTP 发送报销单。邮件服务器在后台自动运行。
+
+### 装置脚本自动配置
+
+使用 `install.sh` 部署时，邮件服务器将作为 systemd 服务自动启动：
+
+```bash
+# 检查服务状态
+sudo systemctl status omnitools-email
+
+# 查看日志
+sudo journalctl -u omnitools-email -f
+
+# 重启服务
+sudo systemctl restart omnitools-email
+```
+
+### 开发环境配置
+
+在开发环境中，邮件服务器需要单独启动：
+
+```bash
+npm run email-server
+```
+
+或同时运行前端和邮件服务器：
+
+```bash
+npm run dev
 ```
 
 ## 浏览器数据库

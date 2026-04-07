@@ -7,11 +7,48 @@ function apiUrl(path: string): string {
 }
 
 function parseErrorMessage(body: string): string {
+  const text = body?.trim();
+  if (!text) {
+    return "请求失败";
+  }
+
+  if (text.startsWith("<")) {
+    if (/502 Bad Gateway/i.test(text)) {
+      return "邮件 API 返回 502。请检查后端邮件服务是否已启动，或 Nginx /api 代理是否异常。";
+    }
+    if (/504 Gateway Time-out/i.test(text) || /gateway timeout/i.test(text)) {
+      return "邮件 API 请求超时。请检查后端服务是否可访问。";
+    }
+    return "邮件 API 返回 HTML 错误页面，请检查后端服务或代理配置。";
+  }
+
   try {
     const j = JSON.parse(body) as { error?: string };
     return j.error || body;
   } catch {
     return body || "请求失败";
+  }
+}
+
+export async function getSmtpSettings(): Promise<SmtpSettings | null> {
+  const res = await fetch(apiUrl("/api/smtp"));
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(parseErrorMessage(text));
+  }
+  const data = (await res.json()) as SmtpSettings | null;
+  return data;
+}
+
+export async function saveSmtpSettings(smtp: SmtpSettings): Promise<void> {
+  const res = await fetch(apiUrl("/api/smtp"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(smtp),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
   }
 }
 

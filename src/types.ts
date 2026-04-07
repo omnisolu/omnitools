@@ -9,7 +9,7 @@ export interface HeaderInfo {
   periodTo: string;
 }
 
-/** 后台保存的 SMTP 配置（仅存于浏览器 IndexedDB，发送时由本机邮件服务使用） */
+/** SMTP 配置（由服务端 /api/smtp 持久化，见 emailApi） */
 export interface SmtpSettings {
   host: string;
   port: number;
