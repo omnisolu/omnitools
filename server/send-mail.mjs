@@ -65,7 +65,16 @@ function getSetting(key) {
   const stmt = db.prepare("SELECT value FROM settings WHERE key = ?");
   const row = stmt.get(key);
   db.close();
-  return row ? JSON.parse(row.value) : null;
+  if (!row || row.value == null || row.value === "") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(row.value);
+  } catch (err) {
+    console.error(`Failed to parse stored setting for key=${key}:`, err);
+    return null;
+  }
 }
 
 function saveSetting(key, value) {

@@ -347,8 +347,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   );
 
   return (
-    <section className="card admin-page">
-      <aside className="admin-sidebar">
+    <section className="admin-page">
+      <aside className="admin-sidebar card">
         <div className="admin-sidebar-title">管理菜单</div>
         <button
           type="button"
@@ -366,20 +366,22 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         </button>
       </aside>
       <div className="admin-main">
-        <div className="admin-header">
-          <div>
-            <h2 className="card-title">{isReportTab ? "后台提交记录" : "SMTP 设置"}</h2>
-            <p className="card-hint">
-              {isReportTab
-                ? "查看已保存到本地数据库的报销单及明细。"
-                : "配置 SMTP 后可将合并 PDF 发到邮箱。"}
-            </p>
+        <section className="card admin-main-card">
+          <div className="admin-header admin-main-header">
+            <div>
+              <h2 className="card-title">{isReportTab ? "后台提交记录" : "SMTP 设置"}</h2>
+              <p className="card-hint">
+                {isReportTab
+                  ? "查看已保存到本地数据库的报销单及明细。"
+                  : "配置 SMTP 后可将合并 PDF 发到邮箱。"}
+              </p>
+            </div>
+            <button type="button" className="btn btn--ghost" onClick={onClose}>
+              返回报销表单
+            </button>
           </div>
-          <button type="button" className="btn btn--ghost" onClick={onClose}>
-            返回报销表单
-          </button>
-        </div>
-        {isReportTab ? reportView : smtpView}
+          {isReportTab ? reportView : smtpView}
+        </section>
       </div>
     </section>
   );
