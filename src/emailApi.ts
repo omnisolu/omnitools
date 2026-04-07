@@ -53,12 +53,12 @@ function parseErrorMessage(body: string): string {
 
   if (text.startsWith("<")) {
     if (/502 Bad Gateway/i.test(text)) {
-      return "邮件 API 返回 502（无法连接上游）。请检查：1) sudo systemctl status omnitools-email  2) curl -sS http://127.0.0.1:3001/api/health 是否返回 JSON。";
+      return "后端 API（omnitools-email，同一进程处理报销提交与邮件等）返回 502（无法连接上游）。请检查：1) sudo systemctl status omnitools-email  2) curl -sS http://127.0.0.1:3001/api/health 是否返回 JSON。";
     }
     if (/504 Gateway Time-out/i.test(text) || /gateway timeout/i.test(text)) {
-      return "邮件 API 请求超时（Nginx 在时限内未收到 Node 响应）。请检查：1) sudo journalctl -u omnitools-email -n 50  2) 本机 curl http://127.0.0.1:3001/api/health  3) Nginx 中 location /api/ 是否 proxy_pass 到 127.0.0.1:3001。";
+      return "后端 API 请求超时（Nginx 在时限内未收到 Node 响应；保存提交走 /api/submit-reimbursement，与发邮件同属该服务）。请检查：1) sudo journalctl -u omnitools-email -n 50  2) 本机 curl http://127.0.0.1:3001/api/health  3) Nginx 中 location /api/ 是否 proxy_pass 到 127.0.0.1:3001。";
     }
-    return "邮件 API 返回 HTML 错误页面，请检查后端服务或代理配置。";
+    return "后端 API 返回 HTML 错误页面，请检查 omnitools-email 或代理配置。";
   }
 
   try {

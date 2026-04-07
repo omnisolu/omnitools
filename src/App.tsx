@@ -64,6 +64,8 @@ const emptyHeader: HeaderInfo = {
 export default function App() {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  /** 确认流程：edit = 核对并保存；review = 已保存后的摘要与 PDF/邮件/打印 */
+  const [confirmPhase, setConfirmPhase] = useState<"edit" | "review">("edit");
   const [isAdminView, setIsAdminView] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [header, setHeader] = useState<HeaderInfo>(emptyHeader);
@@ -369,7 +371,9 @@ export default function App() {
   }
 
   function openConfirm(expensesForGallery: ExpenseLine[]) {
+    setConfirmPhase("edit");
     setSubmittedReimbursementId(null);
+    setDbMessage(null);
     const m = new Map<string, string[]>();
     expensesForGallery.forEach((e) =>
       m.set(
@@ -384,6 +388,8 @@ export default function App() {
   function closeConfirm() {
     setBlobUrlByExpenseId(new Map());
     setSubmittedReimbursementId(null);
+    setConfirmPhase("edit");
+    setDbMessage(null);
     setConfirmOpen(false);
   }
 
@@ -541,6 +547,7 @@ export default function App() {
         },
       });
       setSubmittedReimbursementId(reimbursementId);
+      setConfirmPhase("review");
       setDbMessage(
         `已提交编号 ${reimbursementId}。文件已写入服务器 upload/${reimbursementId}/，报销数据已写入服务端 SQLite。`
       );
@@ -620,47 +627,157 @@ export default function App() {
         <main className="app-main">
         {confirmOpen ? (
           <>
-            <section className="card no-print confirm-panel" aria-label="确认与选项">
-              <h2 className="card-title">确认报销单</h2>
-              <p className="card-hint">
-                请核对下方模板样式是否与纸质版一致。确认无误后可下载合并 PDF（表格 +
-                全部收据）或使用打印。                「保存到数据库」将申请编号{" "}
-                <strong>EXPYYMMXX</strong>，把合并 PDF 与全部收据写入服务器{" "}
-                <code className="admin-code">upload/</code>{" "}
-                下对应文件夹，并将报销明细写入服务端 SQLite。
-              </p>
-              <div className="confirm-fields field-grid">
-                <label className="field">
-                  <span className="field-label">经理姓名 Manager</span>
-                  <input
-                    className="field-input"
-                    value={managerName}
-                    onChange={(e) => setManagerName(e.target.value)}
-                    placeholder="可选"
-                  />
-                </label>
-                <label className="field">
-                  <span className="field-label">预支抵扣 Cash advance</span>
-                  <input
-                    className="field-input"
-                    inputMode="decimal"
-                    value={cashAdvanceStr}
-                    onChange={(e) => setCashAdvanceStr(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </label>
-                <label className="field field-span-2">
-                  <span className="field-label">事由 Business purpose</span>
-                  <textarea
-                    className="field-input field-textarea"
-                    rows={2}
-                    value={businessPurpose}
-                    onChange={(e) => setBusinessPurpose(e.target.value)}
-                    placeholder="可选，将显示在模板中"
-                  />
-                </label>
-              </div>
-            </section>
+            {confirmPhase === "edit" ? (
+              <section className="card no-print confirm-panel" aria-label="确认与选项">
+                <h2 className="card-title">确认报销单</h2>
+                <p className="card-hint">
+                  请核对下方模板样式是否与纸质版一致。填写经理、预支与事由后，点击「保存提交」将分配编号{" "}
+                  <strong>EXPYYMMXX</strong>，把合并 PDF 与全部收据写入服务器{" "}
+                  <code className="admin-code">upload/</code>{" "}
+                  对应文件夹，并将报销明细写入服务端 SQLite。提交成功后可下载 PDF、发邮件或打印。
+                </p>
+                <div className="confirm-fields field-grid">
+                  <label className="field">
+                    <span className="field-label">经理姓名 Manager</span>
+                    <input
+                      className="field-input"
+                      value={managerName}
+                      onChange={(e) => setManagerName(e.target.value)}
+                      placeholder="可选"
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">预支抵扣 Cash advance</span>
+                    <input
+                      className="field-input"
+                      inputMode="decimal"
+                      value={cashAdvanceStr}
+                      onChange={(e) => setCashAdvanceStr(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <label className="field field-span-2">
+                    <span className="field-label">事由 Business purpose</span>
+                    <textarea
+                      className="field-input field-textarea"
+                      rows={2}
+                      value={businessPurpose}
+                      onChange={(e) => setBusinessPurpose(e.target.value)}
+                      placeholder="可选，将显示在模板中"
+                    />
+                  </label>
+                </div>
+              </section>
+            ) : (
+              <section className="card no-print review-panel" aria-label="提交摘要">
+                <h2 className="card-title">提交摘要</h2>
+                {dbMessage ? (
+                  <p className="review-status" role="status">
+                    {dbMessage}
+                  </p>
+                ) : null}
+                <dl className="review-dl">
+                  <div className="review-dl-row">
+                    <dt>申请编号</dt>
+                    <dd>
+                      <strong>{submittedReimbursementId ?? "—"}</strong>
+                    </dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>姓名</dt>
+                    <dd>{header.employeeName.trim() || "—"}</dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>部门</dt>
+                    <dd>{header.department.trim() || "—"}</dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>公司</dt>
+                    <dd>{header.companyName.trim() || "—"}</dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>报销期间</dt>
+                    <dd>
+                      {header.periodFrom || "—"} — {header.periodTo || "—"}
+                    </dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>基准币种</dt>
+                    <dd>{normalizeCurrency(header.baseCurrency) || "—"}</dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>经理</dt>
+                    <dd>{managerName.trim() || "—"}</dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>预支抵扣</dt>
+                    <dd>{cashAdvanceNum.toFixed(2)}</dd>
+                  </div>
+                  <div className="review-dl-row review-dl-row--span">
+                    <dt>事由</dt>
+                    <dd>{businessPurpose.trim() || "—"}</dd>
+                  </div>
+                </dl>
+                {expenses.length > 0 ? (
+                  <div className="table-wrap review-table-wrap">
+                    <table className="expense-table review-expense-table">
+                      <thead>
+                        <tr>
+                          <th>日期</th>
+                          <th>说明</th>
+                          <th>类别</th>
+                          <th>币种</th>
+                          <th className="num">汇率</th>
+                          <th className="num">GST</th>
+                          <th className="num">总金额</th>
+                          <th className="num">
+                            折合{normalizeCurrency(header.baseCurrency) || "基准"}
+                          </th>
+                          <th>附件</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expenses.map((e) => (
+                          <tr key={e.id}>
+                            <td>{e.date}</td>
+                            <td>{e.description}</td>
+                            <td>{e.category}</td>
+                            <td>{e.lineCurrency}</td>
+                            <td className="num">{e.exchangeRate}</td>
+                            <td className="num">{e.gst.toFixed(2)}</td>
+                            <td className="num">{e.grossAmount.toFixed(2)}</td>
+                            <td className="num">
+                              {(e.grossAmount * e.exchangeRate).toFixed(2)}
+                            </td>
+                            <td className="attach-cell">
+                              <ul className="attach-file-list review-attach-list">
+                                {e.files.map((f, i) => (
+                                  <li key={`${e.id}-${i}-${fileKey(f)}`}>
+                                    <span className="attach-file-name" title={f.name}>
+                                      {f.name}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="table-foot">
+                      共 {totals.count} 条 · 折合基准币合计{" "}
+                      <strong>
+                        {totals.subtotalBase.toFixed(2)}{" "}
+                        {normalizeCurrency(header.baseCurrency)}
+                      </strong>
+                    </p>
+                  </div>
+                ) : null}
+                <p className="card-hint review-print-hint">
+                  下方为表格与收据预览，可用于生成 PDF、发送邮件或打印。
+                </p>
+              </section>
+            )}
 
             <div id="print-area" className="print-area">
               <FormTemplate
@@ -1163,55 +1280,67 @@ export default function App() {
 
       {!isAdminView && confirmOpen && (
         <footer className="app-footer no-print confirm-sticky-footer">
-          <div className="footer-buttons confirm-footer-grid">
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={closeConfirm}
-            >
-              返回修改
-            </button>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              disabled={dbBusy || submittedReimbursementId !== null}
-              onClick={() => void handleSaveToDatabase()}
-            >
-              {dbBusy
-                ? "正在提交…"
-                : submittedReimbursementId
-                  ? `已提交 ${submittedReimbursementId}`
-                  : "保存到数据库"}
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={pdfBusy || emailBusy}
-              onClick={() => void handleDownloadMergedPdf()}
-            >
-              {pdfBusy ? "正在生成…" : "下载合并 PDF"}
-            </button>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              disabled={pdfBusy || emailBusy}
-              onClick={() => void handleEmailMergedPdf()}
-            >
-              {emailBusy ? "正在发送…" : "发送 PDF 到邮箱"}
-            </button>
-            <button
-              type="button"
-              className="btn btn--accent"
-              onClick={handlePrint}
-            >
-              打印
-            </button>
-          </div>
-          {dbMessage ? (
-            <div className="confirm-message">
-              <p>{dbMessage}</p>
-            </div>
-          ) : null}
+          {confirmPhase === "edit" ? (
+            <>
+              <div className="footer-buttons confirm-footer-grid confirm-footer-edit">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={closeConfirm}
+                >
+                  返回修改
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={dbBusy}
+                  onClick={() => void handleSaveToDatabase()}
+                >
+                  {dbBusy ? "正在提交…" : "保存提交"}
+                </button>
+              </div>
+              {dbMessage ? (
+                <div className="confirm-message">
+                  <p>{dbMessage}</p>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="footer-buttons confirm-footer-grid confirm-footer-review">
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={pdfBusy || emailBusy}
+                  onClick={() => void handleDownloadMergedPdf()}
+                >
+                  {pdfBusy ? "正在生成…" : "下载合并 PDF"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={pdfBusy || emailBusy}
+                  onClick={() => void handleEmailMergedPdf()}
+                >
+                  {emailBusy ? "正在发送…" : "发送 PDF 到邮箱"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--accent"
+                  onClick={handlePrint}
+                >
+                  打印
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={closeConfirm}
+                >
+                  关闭
+                </button>
+              </div>
+            </>
+          )}
         </footer>
       )}
     </div>

@@ -448,6 +448,72 @@
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
+.confirm-footer-edit {
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.review-panel {
+  margin-bottom: 0.5rem;
+}
+
+.review-status {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  background: #ecfdf3;
+  border: 1px solid #b8e0c8;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.review-dl {
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.35rem 1rem;
+  grid-template-columns: auto 1fr;
+  font-size: 0.92rem;
+}
+
+.review-dl-row {
+  display: contents;
+}
+
+.review-dl-row dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.review-dl-row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.review-dl-row--span dt {
+  align-self: start;
+}
+
+.review-table-wrap {
+  margin-bottom: 0.5rem;
+}
+
+.review-expense-table .attach-cell {
+  vertical-align: top;
+}
+
+.review-attach-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-print-hint {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
 .btn--sm {
   padding: 0.45rem 0.75rem;
   font-size: 0.88rem;
