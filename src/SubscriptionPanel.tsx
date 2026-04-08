@@ -469,7 +469,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                   <td>
                     {readOnly ? (
                       <span className={`sub-status sub-status--${s.status} sub-status--static`}>
-                        {statusLabel(s)}
+                        {statusLabel(s.status)}
                       </span>
                     ) : (
                       <button
@@ -479,7 +479,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                         title="点击在使用中与已暂停之间切换；申请中将变为使用中"
                         onClick={() => void onToggleStatus(s)}
                       >
-                        {statusLabel(s)}
+                        {statusLabel(s.status)}
                       </button>
                     )}
                   </td>
