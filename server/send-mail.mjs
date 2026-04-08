@@ -22,6 +22,15 @@ import {
   updateCompanyPreset,
   updateExpenseCategoryPreset,
 } from "./expense-sqlite.mjs";
+import {
+  ensureSubscriptionSchema,
+  listSubscriptionsForApi,
+  insertSubscription,
+  updateSubscription,
+  toggleSubscriptionActivePaused,
+  deleteSubscription,
+  getSubscriptionById,
+} from "./subscription-sqlite.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +57,8 @@ try {
   console.error(err);
   process.exit(1);
 }
+
+ensureSubscriptionSchema(expenseDb);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -478,6 +489,109 @@ app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
       subject,
       text: "请查收附件中的合并报销单 PDF。",
       attachments: [{ filename, content: req.file.buffer }],
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "发送失败" });
+  }
+});
+
+/** ---------- 订阅追踪（SQLite，金额以分为单位） ---------- */
+
+app.get("/api/subscriptions", (_req, res) => {
+  try {
+    const data = listSubscriptionsForApi(expenseDb);
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+app.post("/api/subscriptions", (req, res) => {
+  try {
+    const row = insertSubscription(expenseDb, req.body || {});
+    res.json({ ok: true, subscription: row });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "创建失败" });
+  }
+});
+
+app.patch("/api/subscriptions/:id", (req, res) => {
+  try {
+    const row = updateSubscription(expenseDb, req.params.id, req.body || {});
+    res.json({ ok: true, subscription: row });
+  } catch (e) {
+    console.error(e);
+    const code = e.message === "记录不存在" ? 404 : 400;
+    res.status(code).json({ error: e.message || "更新失败" });
+  }
+});
+
+app.post("/api/subscriptions/:id/toggle-status", (_req, res) => {
+  try {
+    const row = toggleSubscriptionActivePaused(expenseDb, _req.params.id);
+    res.json({ ok: true, subscription: row });
+  } catch (e) {
+    console.error(e);
+    const code = e.message === "记录不存在" ? 404 : 400;
+    res.status(code).json({ error: e.message || "切换失败" });
+  }
+});
+
+app.delete("/api/subscriptions/:id", (req, res) => {
+  try {
+    deleteSubscription(expenseDb, req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    const code = e.message === "记录不存在" ? 404 : 400;
+    res.status(code).json({ error: e.message || "删除失败" });
+  }
+});
+
+app.post("/api/subscriptions/:id/remind", async (req, res) => {
+  let smtp;
+  try {
+    const sub = getSubscriptionById(expenseDb, req.params.id);
+    if (!sub) {
+      res.status(404).json({ error: "记录不存在" });
+      return;
+    }
+    const bodySmtp =
+      req.body && typeof req.body === "object" && req.body.smtp
+        ? req.body.smtp
+        : {};
+    smtp = resolveSmtpMerge(expenseDb, bodySmtp);
+    const errMsg = validateSmtp(smtp);
+    if (errMsg) {
+      res.status(400).json({ error: errMsg });
+      return;
+    }
+    const to = String(sub.userEmail || "").trim();
+    if (!to) {
+      res.status(400).json({ error: "订阅记录缺少收件邮箱" });
+      return;
+    }
+    const transporter = createTransportFromSmtp(smtp);
+    const fromAddr = (smtp.fromEmail || smtp.user || "").trim();
+    const amt = (sub.amountMinor / 100).toFixed(2);
+    const usd = (sub.amountUsdMinor / 100).toFixed(2);
+    const lines = [
+      `服务：${sub.serviceName}`,
+      `项目：${sub.project}`,
+      `金额：${amt} ${sub.currency}（折合约 ${usd} USD）`,
+      `周期：${sub.cycle === "monthly" ? "月付" : "年付"}`,
+      `下次扣款日：${sub.nextBillingDate}`,
+      `状态：${sub.status}`,
+    ].join("\n");
+    await transporter.sendMail({
+      from: fromAddr || smtp.user,
+      to,
+      subject: `[订阅提醒] ${sub.serviceName} · ${sub.nextBillingDate}`,
+      text: `您好 ${sub.userName}，\n\n以下为订阅备忘：\n\n${lines}\n\n—— OmniTools 订阅追踪`,
     });
     res.json({ ok: true });
   } catch (e) {

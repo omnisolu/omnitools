@@ -11,6 +11,7 @@ import {
 import { normalizeCurrency } from "./currencies";
 import { formatIsoDateDisplay, formatIsoDateRange } from "./formatIsoDate";
 import ProfileSettings from "./ProfileSettings";
+import SubscriptionPanel from "./SubscriptionPanel";
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -69,9 +70,9 @@ export default function AdminPanel({
   const [smtpMessage, setSmtpMessage] = useState<string | null>(null);
   const [smtpSaveBusy, setSmtpSaveBusy] = useState(false);
   const [smtpTestBusy, setSmtpTestBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<"report" | "smtp" | "profile">(
-    "report"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "report" | "smtp" | "profile" | "subscriptions"
+  >("report");
   /** 报表列表中选中的报销单，null 表示显示列表 */
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -533,6 +534,13 @@ export default function AdminPanel({
         >
           Profile Setting
         </button>
+        <button
+          type="button"
+          className={`admin-sidebar-button ${activeTab === "subscriptions" ? "active" : ""}`}
+          onClick={() => setActiveTab("subscriptions")}
+        >
+          订阅追踪
+        </button>
       </aside>
       <div className="admin-main">
         <section className="card admin-main-card">
@@ -543,14 +551,18 @@ export default function AdminPanel({
                   ? "后台提交记录"
                   : activeTab === "smtp"
                     ? "SMTP 设置"
-                    : "Profile Setting"}
+                    : activeTab === "profile"
+                      ? "Profile Setting"
+                      : "订阅追踪"}
               </h2>
               <p className="card-hint">
                 {activeTab === "report"
                   ? "查看已提交到服务端 SQLite 的报销单及明细。"
                   : activeTab === "smtp"
                     ? "配置 SMTP 后可将合并 PDF 发到邮箱。"
-                    : "维护公司列表与费用类别；启用项会出现在报销表单的下拉中。"}
+                    : activeTab === "profile"
+                      ? "维护公司列表与费用类别；启用项会出现在报销表单的下拉中。"
+                      : "管理订阅、多币种折合 USD、一键邮件提醒与状态切换（数据存于同一 SQLite）。"}
               </p>
             </div>
             <button type="button" className="btn btn--ghost" onClick={onClose}>
@@ -561,9 +573,13 @@ export default function AdminPanel({
             ? reportView
             : activeTab === "smtp"
               ? smtpView
-              : (
-                  <ProfileSettings onFormPresetsChanged={onFormPresetsChanged} />
-                )}
+              : activeTab === "profile"
+                ? (
+                    <ProfileSettings onFormPresetsChanged={onFormPresetsChanged} />
+                  )
+                : (
+                    <SubscriptionPanel />
+                  )}
         </section>
       </div>
     </section>

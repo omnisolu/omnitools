@@ -18,6 +18,7 @@ import {
   submitExpenseReimbursementToServer,
 } from "./emailApi";
 import AdminPanel from "./AdminPanel";
+import SubscriptionPanel from "./SubscriptionPanel";
 import { formatIsoDateRange } from "./formatIsoDate";
 import type { ExpenseLine, HeaderInfo } from "./types";
 import "./App.css";
@@ -70,6 +71,10 @@ export default function App() {
   const [confirmPhase, setConfirmPhase] = useState<"edit" | "review">("edit");
   const [isAdminView, setIsAdminView] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  /** 首页主内容：默认订阅追踪，费用报销为原报销表单 */
+  const [homeMode, setHomeMode] = useState<"subscriptions" | "reimbursement">(
+    "subscriptions"
+  );
   const [header, setHeader] = useState<HeaderInfo>(emptyHeader);
   const [companyPresets, setCompanyPresets] = useState<string[]>(() => [
     ...COMPANY_PRESETS,
@@ -415,6 +420,15 @@ export default function App() {
     setConfirmOpen(false);
   }
 
+  function goHomeSubscriptions() {
+    if (confirmOpen) closeConfirm();
+    setHomeMode("subscriptions");
+  }
+
+  function goReimbursement() {
+    setHomeMode("reimbursement");
+  }
+
   function removeLineFileAt(index: number) {
     setLineFiles((prev) => prev.filter((_, i) => i !== index));
     setFileTick((k) => k + 1);
@@ -616,8 +630,34 @@ export default function App() {
         <div className="app-menubar-inner">
           <div className="app-menubar-segment app-menubar-segment--left">
             <span className="app-menubar-logo">OmniTools</span>
+            {!isAdminView ? (
+              <div className="app-menubar-nav" role="tablist" aria-label="首页功能">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={homeMode === "subscriptions"}
+                  className={`app-menubar-nav-btn ${homeMode === "subscriptions" ? "active" : ""}`}
+                  onClick={goHomeSubscriptions}
+                >
+                  订阅追踪
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={homeMode === "reimbursement"}
+                  className={`app-menubar-nav-btn ${homeMode === "reimbursement" ? "active" : ""}`}
+                  onClick={goReimbursement}
+                >
+                  费用报销
+                </button>
+              </div>
+            ) : null}
             <span className="app-menubar-tag">
-              {isAdminView ? "后台" : "报销"}
+              {isAdminView
+                ? "后台"
+                : homeMode === "subscriptions"
+                  ? "订阅"
+                  : "报销"}
             </span>
           </div>
           <div className="app-menubar-segment app-menubar-segment--right">
@@ -629,7 +669,11 @@ export default function App() {
               className="btn btn--ghost btn--sm app-menubar-admin"
               onClick={handleAdminToggle}
             >
-              {isAuthenticated ? (isAdminView ? "返回报销" : "查看后台") : "查看后台"}
+              {isAuthenticated
+                ? isAdminView
+                  ? "退出后台"
+                  : "查看后台"
+                : "查看后台"}
             </button>
           </div>
         </div>
@@ -638,10 +682,18 @@ export default function App() {
       <header className="app-header no-print">
         <div className="app-header-titles">
           <h1 className="app-title">
-            {isAdminView ? "后台管理" : "Expense Reimbursement Form"}
+            {isAdminView
+              ? "后台管理"
+              : homeMode === "subscriptions"
+                ? "订阅追踪"
+                : "Expense Reimbursement Form"}
           </h1>
           <p className="app-sub">
-            {isAdminView ? "SMTP 与已保存记录" : "费用报销单"}
+            {isAdminView
+              ? "SMTP 与已保存记录"
+              : homeMode === "subscriptions"
+                ? "订阅管理与邮件提醒"
+                : "费用报销单"}
           </p>
         </div>
       </header>
@@ -651,6 +703,12 @@ export default function App() {
           onClose={() => setIsAdminView(false)}
           onFormPresetsChanged={loadFormPresets}
         />
+      ) : homeMode === "subscriptions" ? (
+        <main className="app-main">
+          <section className="card admin-main-card subscription-home">
+            <SubscriptionPanel readOnly />
+          </section>
+        </main>
       ) : (
         <main className="app-main">
         {confirmOpen ? (
@@ -1253,7 +1311,7 @@ export default function App() {
       </main>
       )}
 
-      {!isAdminView && !confirmOpen && (
+      {!isAdminView && !confirmOpen && homeMode === "reimbursement" && (
         <footer className="app-footer no-print">
           <div className="footer-buttons">
             {step === 1 ? (
@@ -1304,7 +1362,7 @@ export default function App() {
         </footer>
       )}
 
-      {!isAdminView && confirmOpen && (
+      {!isAdminView && confirmOpen && homeMode === "reimbursement" && (
         <footer className="app-footer no-print confirm-sticky-footer">
           {confirmPhase === "edit" ? (
             <>
