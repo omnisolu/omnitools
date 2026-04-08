@@ -149,9 +149,16 @@ export function sanitizeCardLastFour(raw) {
   return digits.slice(-4).padStart(4, "0").slice(-4);
 }
 
+/**
+ * 前端与 POST JSON 约定：amountMinor 为「分」的整数；amount 为「元」的字符串或小数。
+ * 若对整数再 ×100，会把已换算好的分再次放大 100 倍（如 200 元 → 20000 分 → 误存为 2000000）。
+ */
 function parseAmountToMinor(raw) {
   if (raw == null) return null;
   if (typeof raw === "number" && Number.isFinite(raw)) {
+    if (Number.isInteger(raw) && raw >= 0) {
+      return raw;
+    }
     return Math.round(raw * 100);
   }
   const t = String(raw).trim().replace(/,/g, "");
