@@ -561,7 +561,7 @@ export default function AdminPanel({
                   : activeTab === "smtp"
                     ? "配置 SMTP 后可将合并 PDF 发到邮箱。"
                     : activeTab === "profile"
-                      ? "维护公司列表与费用类别；启用项会出现在报销表单的下拉中。"
+                      ? "在概览卡片中进入各模块；公司、类别、项目与表单下拉共用 SQLite 数据。"
                       : "管理订阅、多币种折合 USD、一键邮件提醒与状态切换（数据存于同一 SQLite）。"}
               </p>
             </div>
@@ -575,7 +575,10 @@ export default function AdminPanel({
               ? smtpView
               : activeTab === "profile"
                 ? (
-                    <ProfileSettings onFormPresetsChanged={onFormPresetsChanged} />
+                    <ProfileSettings
+                      onFormPresetsChanged={onFormPresetsChanged}
+                      onOpenSmtpTab={() => setActiveTab("smtp")}
+                    />
                   )
                 : (
                     <SubscriptionPanel />

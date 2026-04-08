@@ -125,8 +125,15 @@ export function createExpenseDb(rootDir) {
       sort_order INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS project_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1
+    );
     CREATE INDEX IF NOT EXISTS idx_company_presets_sort ON company_presets(sort_order, id);
     CREATE INDEX IF NOT EXISTS idx_exp_cat_presets_sort ON expense_category_presets(sort_order, id);
+    CREATE INDEX IF NOT EXISTS idx_project_presets_sort ON project_presets(sort_order, id);
   `);
   migrateLegacySmtpIfNeeded(db, rootDir);
   seedProfilePresetsIfEmpty(db);
@@ -164,6 +171,9 @@ const DEFAULT_EXPENSE_CATEGORY_PRESETS = [
   "Other",
 ];
 
+/** 与订阅表单原内置列表一致，仅在表为空时写入 */
+const DEFAULT_PROJECT_PRESETS = ["Polyflow", "Pelago", "Roam"];
+
 function seedProfilePresetsIfEmpty(db) {
   const nc = db.prepare(`SELECT COUNT(*) AS c FROM company_presets`).get().c;
   if (nc === 0) {
@@ -179,6 +189,13 @@ function seedProfilePresetsIfEmpty(db) {
     );
     DEFAULT_EXPENSE_CATEGORY_PRESETS.forEach((name, i) => ins.run(name, i));
   }
+  const np = db.prepare(`SELECT COUNT(*) AS c FROM project_presets`).get().c;
+  if (np === 0) {
+    const ins = db.prepare(
+      `INSERT INTO project_presets (name, sort_order, active) VALUES (?, ?, 1)`
+    );
+    DEFAULT_PROJECT_PRESETS.forEach((name, i) => ins.run(name, i));
+  }
 }
 
 function normName(s) {
@@ -189,14 +206,19 @@ function normName(s) {
 
 /**
  * @param {import("better-sqlite3").Database} db
- * @param {"company" | "category"} kind
+ * @param {"company" | "category" | "project"} kind
  * @param {string} name
  * @param {number} [excludeId]
  */
 function activeNameExists(db, kind, name, excludeId) {
   const n = normName(name);
   if (!n) return false;
-  const table = kind === "company" ? "company_presets" : "expense_category_presets";
+  const table =
+    kind === "company"
+      ? "company_presets"
+      : kind === "category"
+        ? "expense_category_presets"
+        : "project_presets";
   const row = db
     .prepare(
       `SELECT id FROM ${table} WHERE active = 1 AND lower(name) = lower(?) AND id != ?`
@@ -221,7 +243,13 @@ export function getFormPresetsForApi(db) {
     )
     .all()
     .map((r) => r.name);
-  return { companies, categories };
+  const projects = db
+    .prepare(
+      `SELECT name FROM project_presets WHERE active = 1 ORDER BY sort_order ASC, id ASC`
+    )
+    .all()
+    .map((r) => r.name);
+  return { companies, categories, projects };
 }
 
 /**
@@ -242,6 +270,17 @@ export function listExpenseCategoryPresetsForApi(db) {
   return db
     .prepare(
       `SELECT id, name, sort_order AS sortOrder, active FROM expense_category_presets ORDER BY sort_order ASC, id ASC`
+    )
+    .all();
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ */
+export function listProjectPresetsForApi(db) {
+  return db
+    .prepare(
+      `SELECT id, name, sort_order AS sortOrder, active FROM project_presets ORDER BY sort_order ASC, id ASC`
     )
     .all();
 }
@@ -278,6 +317,23 @@ export function createExpenseCategoryPreset(db, name) {
   const sortOrder = (maxRow?.m ?? -1) + 1;
   const r = db
     .prepare(`INSERT INTO expense_category_presets (name, sort_order, active) VALUES (?, ?, 1)`)
+    .run(n, sortOrder);
+  return r.lastInsertRowid;
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {string} name
+ */
+export function createProjectPreset(db, name) {
+  const n = normName(name);
+  if (!n) throw new Error("项目名不能为空");
+  if (n.length > 200) throw new Error("项目名过长");
+  if (activeNameExists(db, "project", n)) throw new Error("已存在同名的启用项目");
+  const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM project_presets`).get();
+  const sortOrder = (maxRow?.m ?? -1) + 1;
+  const r = db
+    .prepare(`INSERT INTO project_presets (name, sort_order, active) VALUES (?, ?, 1)`)
     .run(n, sortOrder);
   return r.lastInsertRowid;
 }
@@ -344,6 +400,39 @@ export function updateExpenseCategoryPreset(db, id, patch) {
     active = next;
   }
   db.prepare(`UPDATE expense_category_presets SET name = ?, active = ? WHERE id = ?`).run(
+    name,
+    active,
+    id
+  );
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {number} id
+ * @param {{ name?: string, active?: boolean }} patch
+ */
+export function updateProjectPreset(db, id, patch) {
+  const row = db.prepare(`SELECT id, name, active FROM project_presets WHERE id = ?`).get(id);
+  if (!row) throw new Error("记录不存在");
+  let name = row.name;
+  let active = row.active;
+  if (patch.name !== undefined) {
+    const n = normName(patch.name);
+    if (!n) throw new Error("项目名不能为空");
+    if (n.length > 200) throw new Error("项目名过长");
+    if (active === 1 || patch.active === true) {
+      if (activeNameExists(db, "project", n, id)) throw new Error("已存在同名的启用项目");
+    }
+    name = n;
+  }
+  if (patch.active !== undefined) {
+    const next = patch.active ? 1 : 0;
+    if (next === 1) {
+      if (activeNameExists(db, "project", name, id)) throw new Error("已存在同名的启用项目");
+    }
+    active = next;
+  }
+  db.prepare(`UPDATE project_presets SET name = ?, active = ? WHERE id = ?`).run(
     name,
     active,
     id

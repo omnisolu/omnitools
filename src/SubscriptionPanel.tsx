@@ -29,7 +29,8 @@ import type {
 } from "./subscriptionTypes";
 
 const SERVICE_PRESETS = ["Cursor", "Claude", "Windsurf", "OpenAI"];
-const PROJECT_PRESETS = ["Polyflow", "Pelago", "Roam"];
+
+const DEFAULT_PROJECT_PRESETS = ["Polyflow", "Pelago", "Roam"];
 
 function formatMinorMajor(minor: number): string {
   return (Math.trunc(minor) / 100).toFixed(2);
@@ -110,6 +111,9 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
   const [companyPresets, setCompanyPresets] = useState<string[]>(() => [
     ...COMPANY_PRESETS,
   ]);
+  const [projectPresets, setProjectPresets] = useState<string[]>(() => [
+    ...DEFAULT_PROJECT_PRESETS,
+  ]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,9 +158,15 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
     (async () => {
       try {
         const p = await fetchFormPresets();
-        if (!canceled) setCompanyPresets(p.companies);
+        if (!canceled) {
+          setCompanyPresets(p.companies);
+          setProjectPresets(p.projects);
+        }
       } catch {
-        /* 保留内置公司列表 */
+        if (!canceled) {
+          setCompanyPresets([...COMPANY_PRESETS]);
+          setProjectPresets([...DEFAULT_PROJECT_PRESETS]);
+        }
       }
     })();
     return () => {
@@ -572,7 +582,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                 required
               />
               <datalist id="subscription-project-presets">
-                {PROJECT_PRESETS.map((x) => (
+                {projectPresets.map((x) => (
                   <option key={x} value={x} />
                 ))}
               </datalist>

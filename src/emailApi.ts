@@ -198,6 +198,7 @@ export interface ProfilePresetRow {
 export async function fetchFormPresets(): Promise<{
   companies: string[];
   categories: string[];
+  projects: string[];
 }> {
   const res = await fetchWithTimeout(
     apiUrl("/api/form-presets"),
@@ -212,10 +213,12 @@ export async function fetchFormPresets(): Promise<{
   const j = parseJsonOrThrow<{
     companies?: string[];
     categories?: string[];
+    projects?: string[];
   }>(text, "加载表单选项");
   return {
     companies: j.companies ?? [],
     categories: j.categories ?? [],
+    projects: j.projects ?? [],
   };
 }
 
@@ -330,6 +333,62 @@ export async function patchProfileExpenseCategory(
     throw new Error(parseErrorMessage(text));
   }
   const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "更新费用类别");
+  return j.items ?? [];
+}
+
+export async function fetchProfileProjects(): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/profile/projects"),
+    undefined,
+    FETCH_TIMEOUT_MS,
+    "加载项目列表"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "加载项目列表");
+  return j.items ?? [];
+}
+
+export async function createProfileProject(name: string): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/profile/projects"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    FETCH_TIMEOUT_MS,
+    "添加项目"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "添加项目");
+  return j.items ?? [];
+}
+
+export async function patchProfileProject(
+  id: number,
+  patch: { name?: string; active?: boolean }
+): Promise<ProfilePresetRow[]> {
+  const res = await fetchWithTimeout(
+    apiUrl(`/api/profile/projects/${encodeURIComponent(String(id))}`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    FETCH_TIMEOUT_MS,
+    "更新项目"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<{ items?: ProfilePresetRow[] }>(text, "更新项目");
   return j.items ?? [];
 }
 

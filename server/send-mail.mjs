@@ -19,8 +19,11 @@ import {
   listExpenseCategoryPresetsForApi,
   createCompanyPreset,
   createExpenseCategoryPreset,
+  createProjectPreset,
   updateCompanyPreset,
   updateExpenseCategoryPreset,
+  updateProjectPreset,
+  listProjectPresetsForApi,
 } from "./expense-sqlite.mjs";
 import {
   ensureSubscriptionSchema,
@@ -455,6 +458,46 @@ app.patch("/api/profile/expense-categories/:id", (req, res) => {
     if (body.active !== undefined) patch.active = Boolean(body.active);
     updateExpenseCategoryPreset(expenseDb, id, patch);
     res.json({ ok: true, items: listExpenseCategoryPresetsForApi(expenseDb) });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "更新失败" });
+  }
+});
+
+app.get("/api/profile/projects", (_req, res) => {
+  try {
+    const items = listProjectPresetsForApi(expenseDb);
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+app.post("/api/profile/projects", (req, res) => {
+  try {
+    const name = req.body?.name;
+    createProjectPreset(expenseDb, name);
+    res.json({ ok: true, items: listProjectPresetsForApi(expenseDb) });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "保存失败" });
+  }
+});
+
+app.patch("/api/profile/projects/:id", (req, res) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "无效 id" });
+      return;
+    }
+    const body = req.body || {};
+    const patch = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.active !== undefined) patch.active = Boolean(body.active);
+    updateProjectPreset(expenseDb, id, patch);
+    res.json({ ok: true, items: listProjectPresetsForApi(expenseDb) });
   } catch (e) {
     console.error(e);
     res.status(400).json({ error: e.message || "更新失败" });

@@ -798,6 +798,90 @@
   align-items: start;
 }
 
+.profile-settings-hub {
+  padding: 0.15rem 0 0.5rem;
+}
+
+.profile-settings-hub-header {
+  margin-bottom: 1.25rem;
+}
+
+.profile-settings-hub-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.profile-settings-hub-sub {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
+.profile-settings-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .profile-settings-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-settings-tile {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 1rem 1.1rem;
+  text-align: left;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: var(--card-inner-bg, var(--surface-2, rgba(255, 255, 255, 0.04)));
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.profile-settings-tile:hover {
+  border-color: var(--accent, rgba(100, 180, 255, 0.45));
+  background: var(--surface-hover, rgba(255, 255, 255, 0.06));
+}
+
+.profile-settings-tile-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.profile-settings-tile-desc {
+  margin: 0 0 0.85rem;
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.profile-settings-tile-link {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--link, #6eb3ff);
+}
+
+.profile-settings-back {
+  margin-bottom: 1rem;
+}
+
+.profile-settings-detail {
+  padding-top: 0.25rem;
+}
+
+.profile-settings-smtp-hint .btn {
+  margin-top: 0.35rem;
+}
+
 .profile-preset-card {
   margin: 0;
 }
