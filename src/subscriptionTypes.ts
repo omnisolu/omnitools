@@ -21,7 +21,8 @@ export interface Subscription {
   /** ISO 日期 YYYY-MM-DD */
   nextBillingDate: string;
   cardLastFour: string;
-  cardExpiryMmYy: string | null;
+  /** 公司 / Company */
+  company: string;
   status: SubscriptionStatus;
   createdAt: string;
   updatedAt: string;
@@ -58,7 +59,7 @@ export interface CreateSubscriptionRequest {
   cycle: SubscriptionCycle;
   nextBillingDate: string;
   cardLastFour: string;
-  cardExpiryMmYy?: string | null;
+  company: string;
   status?: SubscriptionStatus;
 }
 
@@ -73,7 +74,7 @@ export interface PatchSubscriptionRequest {
   cycle?: SubscriptionCycle;
   nextBillingDate?: string;
   cardLastFour?: string;
-  cardExpiryMmYy?: string | null;
+  company?: string;
   status?: SubscriptionStatus;
 }
 
@@ -83,4 +84,30 @@ export interface OkResponse {
 
 export interface ApiErrorBody {
   error: string;
+}
+
+/** 订阅联系人目录（姓名 / Other Name / 邮箱） */
+export interface SubscriptionContact {
+  id: string;
+  userName: string;
+  otherName: string;
+  userEmail: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GetSubscriptionContactsResponse {
+  ok: true;
+  items: SubscriptionContact[];
+}
+
+export interface CreateSubscriptionContactRequest {
+  userName: string;
+  otherName?: string;
+  email: string;
+}
+
+export interface SubscriptionContactSingleResponse {
+  ok: true;
+  contact: SubscriptionContact;
 }

@@ -24,6 +24,10 @@ import {
 } from "./expense-sqlite.mjs";
 import {
   ensureSubscriptionSchema,
+  migrateSubscriptionSchema,
+  ensureSubscriptionContactsSchema,
+  listSubscriptionContactsForApi,
+  insertSubscriptionContact,
   listSubscriptionsForApi,
   insertSubscription,
   updateSubscription,
@@ -59,6 +63,8 @@ try {
 }
 
 ensureSubscriptionSchema(expenseDb);
+migrateSubscriptionSchema(expenseDb);
+ensureSubscriptionContactsSchema(expenseDb);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -497,6 +503,28 @@ app.post("/api/send-expense-pdf", upload.single("pdf"), async (req, res) => {
   }
 });
 
+/** ---------- 订阅联系人目录 ---------- */
+
+app.get("/api/subscription-contacts", (_req, res) => {
+  try {
+    const items = listSubscriptionContactsForApi(expenseDb);
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "读取失败" });
+  }
+});
+
+app.post("/api/subscription-contacts", (req, res) => {
+  try {
+    const contact = insertSubscriptionContact(expenseDb, req.body || {});
+    res.json({ ok: true, contact });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: e.message || "保存失败" });
+  }
+});
+
 /** ---------- 订阅追踪（SQLite，金额以分为单位） ---------- */
 
 app.get("/api/subscriptions", (_req, res) => {
@@ -582,6 +610,7 @@ app.post("/api/subscriptions/:id/remind", async (req, res) => {
     const lines = [
       `服务：${sub.serviceName}`,
       `项目：${sub.project}`,
+      `公司：${sub.company || "—"}`,
       `金额：${amt} ${sub.currency}（折合约 ${usd} USD）`,
       `周期：${sub.cycle === "monthly" ? "月付" : "年付"}`,
       `下次扣款日：${sub.nextBillingDate}`,

@@ -6,17 +6,22 @@ import {
   type FormEvent,
 } from "react";
 import { formatIsoDateDisplay } from "./formatIsoDate";
+import { COMPANY_PRESETS } from "./company";
 import {
   createSubscription,
+  createSubscriptionContact,
   deleteSubscription,
+  fetchSubscriptionContacts,
   fetchSubscriptions,
   patchSubscription,
   sendSubscriptionReminder,
   toggleSubscriptionStatus,
 } from "./subscriptionApi";
+import { fetchFormPresets } from "./emailApi";
 import type {
   CreateSubscriptionRequest,
   Subscription,
+  SubscriptionContact,
   SubscriptionCurrency,
   SubscriptionCycle,
   SubscriptionStatus,
@@ -63,9 +68,20 @@ const emptyForm = {
   cycle: "monthly" as SubscriptionCycle,
   nextBillingDate: "",
   cardLastFour: "",
-  cardExpiryMmYy: "",
+  company: "",
   status: "pending" as SubscriptionStatus,
 };
+
+const emptyNewContact = {
+  userName: "",
+  otherName: "",
+  email: "",
+};
+
+function contactOptionLabel(c: SubscriptionContact): string {
+  const alias = c.otherName.trim();
+  return `${c.userName}${alias ? ` (${alias})` : ""} — ${c.userEmail}`;
+}
 
 export interface SubscriptionPanelProps {
   /** 为 true 时仅展示列表与汇总，不提供增删改、提醒与状态切换（用于首页） */
@@ -85,6 +101,16 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
   const [editId, setEditId] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<Record<string, string | undefined>>({});
+  const [contacts, setContacts] = useState<SubscriptionContact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactFilter, setContactFilter] = useState("");
+  const [contactSelectValue, setContactSelectValue] = useState("");
+  const [addContactOpen, setAddContactOpen] = useState(false);
+  const [newContact, setNewContact] = useState(emptyNewContact);
+  const [newContactBusy, setNewContactBusy] = useState(false);
+  const [companyPresets, setCompanyPresets] = useState<string[]>(() => [
+    ...COMPANY_PRESETS,
+  ]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,6 +129,62 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!formOpen || readOnly) return;
+    let canceled = false;
+    (async () => {
+      setContactsLoading(true);
+      try {
+        const list = await fetchSubscriptionContacts();
+        if (!canceled) setContacts(list);
+      } catch {
+        if (!canceled) setContacts([]);
+      } finally {
+        if (!canceled) setContactsLoading(false);
+      }
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [formOpen, readOnly]);
+
+  useEffect(() => {
+    if (!formOpen || readOnly) return;
+    let canceled = false;
+    (async () => {
+      try {
+        const p = await fetchFormPresets();
+        if (!canceled) setCompanyPresets(p.companies);
+      } catch {
+        /* 保留内置公司列表 */
+      }
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [formOpen, readOnly]);
+
+  /** 根据邮箱与联系人表同步下拉选中项 */
+  useEffect(() => {
+    if (!formOpen || readOnly) return;
+    const em = form.userEmail.trim().toLowerCase();
+    if (!em) {
+      setContactSelectValue("");
+      return;
+    }
+    const m = contacts.find((c) => c.userEmail.toLowerCase() === em);
+    setContactSelectValue(m ? m.id : "");
+  }, [formOpen, readOnly, form.userEmail, contacts]);
+
+  const filteredContacts = useMemo(() => {
+    const q = contactFilter.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter((c) => {
+      const blob = `${c.userName} ${c.otherName} ${c.userEmail}`.toLowerCase();
+      return blob.includes(q);
+    });
+  }, [contacts, contactFilter]);
 
   const recordBusy = useCallback((id: string, key: string | undefined) => {
     setRowBusy((prev) => {
@@ -125,6 +207,11 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
       window.alert("卡号仅保存后四位数字");
       return;
     }
+    const company = form.company.trim();
+    if (!company) {
+      window.alert("请填写 Company（公司）");
+      return;
+    }
     const body: CreateSubscriptionRequest = {
       userName: form.userName.trim(),
       userEmail: form.userEmail.trim(),
@@ -135,7 +222,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
       cycle: form.cycle,
       nextBillingDate: form.nextBillingDate,
       cardLastFour,
-      cardExpiryMmYy: form.cardExpiryMmYy.trim() || null,
+      company,
       status: form.status,
     };
     setSaveBusy(true);
@@ -158,6 +245,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
 
   function startEdit(s: Subscription) {
     setEditId(s.id);
+    setContactFilter("");
     setFormOpen(true);
     setForm({
       userName: s.userName,
@@ -169,7 +257,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
       cycle: s.cycle,
       nextBillingDate: s.nextBillingDate,
       cardLastFour: s.cardLastFour,
-      cardExpiryMmYy: s.cardExpiryMmYy ?? "",
+      company: s.company ?? "",
       status: s.status,
     });
   }
@@ -178,6 +266,66 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
     setForm(emptyForm);
     setEditId(null);
     setFormOpen(false);
+    setContactFilter("");
+    setContactSelectValue("");
+    setAddContactOpen(false);
+    setNewContact(emptyNewContact);
+  }
+
+  function handleContactPick(value: string) {
+    if (value === "__add_new__") {
+      setNewContact(emptyNewContact);
+      setAddContactOpen(true);
+      return;
+    }
+    setContactSelectValue(value);
+    if (!value) {
+      return;
+    }
+    const c = contacts.find((x) => x.id === value);
+    if (c) {
+      setForm((f) => ({
+        ...f,
+        userName: c.userName,
+        userEmail: c.userEmail,
+      }));
+    }
+  }
+
+  async function handleSaveNewContact(e: FormEvent) {
+    e.preventDefault();
+    const userName = newContact.userName.trim();
+    const email = newContact.email.trim();
+    if (!userName) {
+      window.alert("请填写姓名");
+      return;
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      window.alert("请填写有效邮箱");
+      return;
+    }
+    setNewContactBusy(true);
+    try {
+      const created = await createSubscriptionContact({
+        userName,
+        otherName: newContact.otherName.trim(),
+        email,
+      });
+      const list = await fetchSubscriptionContacts();
+      setContacts(list);
+      setForm((f) => ({
+        ...f,
+        userName: created.userName,
+        userEmail: created.userEmail,
+      }));
+      setContactSelectValue(created.id);
+      setAddContactOpen(false);
+      setNewContact(emptyNewContact);
+    } catch (err) {
+      window.alert((err as Error)?.message || "保存失败");
+    } finally {
+      setNewContactBusy(false);
+    }
   }
 
   async function onToggleStatus(s: Subscription) {
@@ -255,6 +403,39 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
         <form className="card subscription-form" onSubmit={(e) => void handleSubmit(e)}>
           <h3 className="subscription-form-title">{editId ? "编辑订阅" : "新建订阅"}</h3>
           <div className="field-grid subscription-form-grid">
+            <div className="field field-span-2 subscription-contact-picker">
+              <span className="field-label">选择使用者</span>
+              <p className="subscription-contact-hint">
+                从系统联系人中选择；顶部 <strong>Add New</strong>{" "}
+                可新增姓名、Other Name 与邮箱。
+              </p>
+              <input
+                className="field-input subscription-contact-filter"
+                type="search"
+                placeholder="筛选姓名、Other Name 或邮箱…"
+                value={contactFilter}
+                onChange={(e) => setContactFilter(e.target.value)}
+                autoComplete="off"
+                aria-label="筛选联系人"
+              />
+              <select
+                className="field-input subscription-contact-select"
+                value={contactSelectValue}
+                onChange={(e) => handleContactPick(e.target.value)}
+                disabled={contactsLoading}
+                aria-label="选择联系人"
+              >
+                <option value="">
+                  {contactsLoading ? "加载联系人…" : "— 请选择 —"}
+                </option>
+                <option value="__add_new__">＋ Add New</option>
+                {filteredContacts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {contactOptionLabel(c)}
+                  </option>
+                ))}
+              </select>
+            </div>
             <label className="field">
               <span className="field-label">使用者姓名</span>
               <input
@@ -263,6 +444,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                 onChange={(e) => setForm((f) => ({ ...f, userName: e.target.value }))}
                 required
               />
+              <span className="subscription-field-note">可由上方选择填入，也可手改</span>
             </label>
             <label className="field">
               <span className="field-label">邮箱</span>
@@ -273,6 +455,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                 onChange={(e) => setForm((f) => ({ ...f, userEmail: e.target.value }))}
                 required
               />
+              <span className="subscription-field-note">可由上方选择填入，也可手改</span>
             </label>
             <label className="field">
               <span className="field-label">订阅服务</span>
@@ -376,14 +559,20 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
               />
             </label>
             <label className="field">
-              <span className="field-label">卡过期（MM/YY）</span>
+              <span className="field-label">Company（公司）</span>
               <input
                 className="field-input"
-                value={form.cardExpiryMmYy}
-                onChange={(e) => setForm((f) => ({ ...f, cardExpiryMmYy: e.target.value }))}
-                placeholder="如 07/29"
-                pattern="\d{2}/\d{2}"
+                list="subscription-company-presets"
+                value={form.company}
+                onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
+                placeholder="如 Omnisolu"
+                required
               />
+              <datalist id="subscription-company-presets">
+                {companyPresets.map((x) => (
+                  <option key={x} value={x} />
+                ))}
+              </datalist>
             </label>
             <label className="field">
               <span className="field-label">状态</span>
@@ -437,7 +626,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                 <th>收费方式</th>
                 <th>日期</th>
                 <th>卡号后四位</th>
-                <th>卡过期</th>
+                <th>Company</th>
                 <th>状态</th>
                 {!readOnly ? <th className="subscription-actions-col">操作</th> : null}
               </tr>
@@ -465,7 +654,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
                   <td>
                     <code className="admin-code">****{s.cardLastFour}</code>
                   </td>
-                  <td>{s.cardExpiryMmYy || "—"}</td>
+                  <td>{s.company?.trim() || "—"}</td>
                   <td>
                     {readOnly ? (
                       <span className={`sub-status sub-status--${s.status} sub-status--static`}>
@@ -518,6 +707,87 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
           <p className="subscription-record-count">{items.length} 条记录</p>
         </div>
       )}
+
+      {!readOnly && addContactOpen ? (
+        <div
+          className="subscription-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="subscription-new-contact-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setAddContactOpen(false);
+              setNewContact(emptyNewContact);
+            }
+          }}
+        >
+          <div
+            className="subscription-modal card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="subscription-new-contact-title" className="subscription-modal-title">
+              新建联系人
+            </h3>
+            <p className="subscription-modal-hint">
+              保存后将写入联系人表，并自动填入本订阅的姓名与邮箱。
+            </p>
+            <form className="subscription-modal-form" onSubmit={handleSaveNewContact}>
+              <label className="field">
+                <span className="field-label">姓名</span>
+                <input
+                  className="field-input"
+                  value={newContact.userName}
+                  onChange={(e) =>
+                    setNewContact((n) => ({ ...n, userName: e.target.value }))
+                  }
+                  autoComplete="name"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">Other Name</span>
+                <input
+                  className="field-input"
+                  value={newContact.otherName}
+                  onChange={(e) =>
+                    setNewContact((n) => ({ ...n, otherName: e.target.value }))
+                  }
+                  placeholder="可选"
+                />
+              </label>
+              <label className="field">
+                <span className="field-label">邮箱</span>
+                <input
+                  className="field-input"
+                  type="email"
+                  value={newContact.email}
+                  onChange={(e) =>
+                    setNewContact((n) => ({ ...n, email: e.target.value }))
+                  }
+                  autoComplete="email"
+                  required
+                />
+              </label>
+              <div className="subscription-modal-actions">
+                <button type="submit" className="btn btn--primary" disabled={newContactBusy}>
+                  {newContactBusy ? "保存中…" : "保存"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  disabled={newContactBusy}
+                  onClick={() => {
+                    setAddContactOpen(false);
+                    setNewContact(emptyNewContact);
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

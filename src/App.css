@@ -1,10 +1,14 @@
+:root {
+  --app-version-bar-height: 1.75rem;
+}
+
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   max-width: var(--app-max-width, 1280px);
   margin: 0 auto;
-  padding: 1.5rem 1.25rem 6.5rem;
+  padding: 1.5rem 1.25rem calc(6.5rem + var(--app-version-bar-height));
 }
 
 .app-menubar {
@@ -425,11 +429,36 @@
   color: var(--muted);
 }
 
-.app-footer {
+.app-version-footer {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--app-version-bar-height);
+  padding: 0.2rem 1rem 0.35rem;
+  padding-bottom: calc(0.35rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(15, 18, 24, 0.92);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.25);
+}
+
+.app-version-text {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  user-select: none;
+}
+
+.app-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--app-version-bar-height);
   padding: 0.85rem 1.25rem;
   background: var(--footer-bg);
   backdrop-filter: blur(8px);
@@ -1030,6 +1059,77 @@
   margin: 0.5rem 0 0;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.subscription-contact-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.subscription-contact-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.subscription-contact-filter {
+  margin-bottom: 0;
+}
+
+.subscription-contact-select {
+  font-size: 0.88rem;
+}
+
+.subscription-field-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.subscription-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.subscription-modal {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.25rem;
+}
+
+.subscription-modal-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.subscription-modal-hint {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.subscription-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.subscription-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .admin-table {

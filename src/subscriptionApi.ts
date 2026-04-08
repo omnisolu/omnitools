@@ -1,8 +1,12 @@
 import type {
+  CreateSubscriptionContactRequest,
   CreateSubscriptionRequest,
   GetSubscriptionsResponse,
+  GetSubscriptionContactsResponse,
   PatchSubscriptionRequest,
   Subscription,
+  SubscriptionContact,
+  SubscriptionContactSingleResponse,
   SubscriptionSingleResponse,
 } from "./subscriptionTypes";
 
@@ -175,4 +179,40 @@ export async function sendSubscriptionReminder(id: string): Promise<void> {
   if (!res.ok) {
     throw new Error(parseErrorMessage(text));
   }
+}
+
+export async function fetchSubscriptionContacts(): Promise<SubscriptionContact[]> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/subscription-contacts"),
+    undefined,
+    FETCH_TIMEOUT_MS,
+    "加载订阅联系人"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<GetSubscriptionContactsResponse>(text, "加载订阅联系人");
+  return j.items;
+}
+
+export async function createSubscriptionContact(
+  body: CreateSubscriptionContactRequest
+): Promise<SubscriptionContact> {
+  const res = await fetchWithTimeout(
+    apiUrl("/api/subscription-contacts"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    FETCH_TIMEOUT_MS,
+    "创建订阅联系人"
+  );
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(parseErrorMessage(text));
+  }
+  const j = parseJsonOrThrow<SubscriptionContactSingleResponse>(text, "创建订阅联系人");
+  return j.contact;
 }

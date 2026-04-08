@@ -1427,6 +1427,10 @@ export default function App() {
           )}
         </footer>
       )}
+
+      <footer className="app-version-footer no-print" aria-label="版本信息">
+        <span className="app-version-text">v{__APP_VERSION__}</span>
+      </footer>
     </div>
   );
 }

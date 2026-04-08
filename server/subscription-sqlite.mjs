@@ -46,6 +46,7 @@ export function ensureSubscriptionSchema(db) {
       next_billing_date TEXT NOT NULL,
       card_last_four TEXT NOT NULL,
       card_expiry_mm_yy TEXT,
+      company TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -53,6 +54,86 @@ export function ensureSubscriptionSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_subs_next_date ON subscriptions(next_billing_date);
     CREATE INDEX IF NOT EXISTS idx_subs_status ON subscriptions(status);
   `);
+}
+
+/**
+ * 已有库补充 company 列（旧版仅有 card_expiry 等）
+ * @param {import("better-sqlite3").Database} db
+ */
+export function migrateSubscriptionSchema(db) {
+  const cols = db.prepare(`PRAGMA table_info(subscriptions)`).all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("company")) {
+    db.exec(`ALTER TABLE subscriptions ADD COLUMN company TEXT NOT NULL DEFAULT ''`);
+  }
+}
+
+/**
+ * 订阅联系人目录：姓名、别名、邮箱（供新建订阅时选择）
+ * @param {import("better-sqlite3").Database} db
+ */
+export function ensureSubscriptionContactsSchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subscription_contacts (
+      id TEXT PRIMARY KEY,
+      user_name TEXT NOT NULL,
+      other_name TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sub_contacts_email ON subscription_contacts(lower(email));
+  `);
+}
+
+function contactRowToApi(r) {
+  return {
+    id: r.id,
+    userName: r.user_name,
+    otherName: r.other_name || "",
+    userEmail: r.email,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ */
+export function listSubscriptionContactsForApi(db) {
+  const rows = db
+    .prepare(
+      `SELECT * FROM subscription_contacts ORDER BY lower(user_name) ASC, lower(email) ASC, id ASC`
+    )
+    .all();
+  return rows.map((r) => contactRowToApi(r));
+}
+
+/**
+ * @param {import("better-sqlite3").Database} db
+ * @param {object} body
+ */
+export function insertSubscriptionContact(db, body) {
+  const userName = normStr(body.userName, 200);
+  const otherName = normStr(body.otherName ?? body.other_name, 200);
+  const email = normStr(body.email ?? body.userEmail, 320);
+  if (!userName) throw new Error("姓名不能为空");
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("邮箱无效");
+  }
+  const dup = db
+    .prepare(`SELECT id FROM subscription_contacts WHERE lower(email) = lower(?)`)
+    .get(email);
+  if (dup) throw new Error("该邮箱已在联系人列表中");
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  db.prepare(
+    `
+    INSERT INTO subscription_contacts (id, user_name, other_name, email, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `
+  ).run(id, userName, otherName, email, now, now);
+  return contactRowToApi(db.prepare(`SELECT * FROM subscription_contacts WHERE id = ?`).get(id));
 }
 
 function normStr(s, max = 500) {
@@ -102,15 +183,6 @@ function validateIsoDate(d) {
   return null;
 }
 
-function validateCardExpiryMmYy(s) {
-  if (s == null || s === "") return null;
-  const t = String(s).trim();
-  if (!/^\d{2}\/\d{2}$/.test(t)) {
-    return "卡过期日期须为 MM/YY 或留空";
-  }
-  return null;
-}
-
 function rowToApi(r) {
   const currency = r.currency === "CAD" ? "CAD" : "USD";
   const amountMinor = Math.trunc(r.amount_minor);
@@ -127,7 +199,7 @@ function rowToApi(r) {
     cycle: r.cycle,
     nextBillingDate: r.next_billing_date,
     cardLastFour: r.card_last_four,
-    cardExpiryMmYy: r.card_expiry_mm_yy || null,
+    company: r.company != null && r.company !== undefined ? String(r.company) : "",
     status: r.status,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -174,11 +246,7 @@ export function insertSubscription(db, body) {
   const cycle = CYCLE.has(body.cycle) ? body.cycle : null;
   const nextBillingDate = normStr(body.nextBillingDate, 32);
   const cardLastFour = sanitizeCardLastFour(body.cardLastFour);
-  const cardExpiryRaw = body.cardExpiryMmYy;
-  const cardExpiryMmYy =
-    cardExpiryRaw == null || String(cardExpiryRaw).trim() === ""
-      ? null
-      : normStr(cardExpiryRaw, 8);
+  const company = normStr(body.company, 200);
   const status = STATUS.has(body.status) ? body.status : "pending";
 
   if (!userName) throw new Error("userName 不能为空");
@@ -193,8 +261,7 @@ export function insertSubscription(db, body) {
   const amountMinor = parseAmountToMinor(body.amountMinor ?? body.amount);
   if (amountMinor == null || amountMinor < 0) throw new Error("amount 无效");
   if (cardLastFour.length !== 4) throw new Error("卡号仅保存后四位数字");
-  const errE = validateCardExpiryMmYy(cardExpiryMmYy);
-  if (errE) throw new Error(errE);
+  if (!company) throw new Error("Company 不能为空");
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -203,8 +270,8 @@ export function insertSubscription(db, body) {
     INSERT INTO subscriptions (
       id, user_name, user_email, service_name, project,
       amount_minor, currency, cycle, next_billing_date,
-      card_last_four, card_expiry_mm_yy, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      card_last_four, card_expiry_mm_yy, company, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `
   ).run(
     id,
@@ -217,7 +284,8 @@ export function insertSubscription(db, body) {
     cycle,
     nextBillingDate,
     cardLastFour,
-    cardExpiryMmYy,
+    null,
+    company,
     status,
     now,
     now
@@ -265,13 +333,10 @@ export function updateSubscription(db, id, body) {
     if (c.length !== 4) throw new Error("卡号仅保存后四位数字");
     patch.card_last_four = c;
   }
-  if (body.cardExpiryMmYy !== undefined) {
-    const v = body.cardExpiryMmYy;
-    const cardExpiryMmYy =
-      v == null || String(v).trim() === "" ? null : normStr(v, 8);
-    const errE = validateCardExpiryMmYy(cardExpiryMmYy);
-    if (errE) throw new Error(errE);
-    patch.card_expiry_mm_yy = cardExpiryMmYy;
+  if (body.company !== undefined) {
+    const co = normStr(body.company, 200);
+    if (!co) throw new Error("Company 不能为空");
+    patch.company = co;
   }
   if (body.status !== undefined) {
     if (!STATUS.has(body.status)) throw new Error("status 无效");

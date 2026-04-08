@@ -1,7 +1,7 @@
 {
   "name": "expense-reimbursement",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.2",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n mail,vite -c cyan,magenta \"npm run email-server\" \"vite\"",
