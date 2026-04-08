@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -78,11 +79,6 @@ const emptyNewContact = {
   email: "",
 };
 
-function contactOptionLabel(c: SubscriptionContact): string {
-  const alias = c.otherName.trim();
-  return `${c.userName}${alias ? ` (${alias})` : ""} — ${c.userEmail}`;
-}
-
 export interface SubscriptionPanelProps {
   /** 为 true 时仅展示列表与汇总，不提供增删改、提醒与状态切换（用于首页） */
   readOnly?: boolean;
@@ -103,8 +99,11 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
   const [rowBusy, setRowBusy] = useState<Record<string, string | undefined>>({});
   const [contacts, setContacts] = useState<SubscriptionContact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
-  const [contactFilter, setContactFilter] = useState("");
+  /** 组合框内文字：搜索或已选姓名 */
+  const [contactComboInput, setContactComboInput] = useState("");
+  const [contactComboOpen, setContactComboOpen] = useState(false);
   const [contactSelectValue, setContactSelectValue] = useState("");
+  const comboWrapRef = useRef<HTMLDivElement>(null);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [newContact, setNewContact] = useState(emptyNewContact);
   const [newContactBusy, setNewContactBusy] = useState(false);
@@ -165,7 +164,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
     };
   }, [formOpen, readOnly]);
 
-  /** 根据邮箱与联系人表同步下拉选中项 */
+  /** 根据邮箱与联系人表同步选中；有匹配时组合框显示姓名（邮箱为空时不清空搜索框，便于先搜索再选） */
   useEffect(() => {
     if (!formOpen || readOnly) return;
     const em = form.userEmail.trim().toLowerCase();
@@ -175,16 +174,35 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
     }
     const m = contacts.find((c) => c.userEmail.toLowerCase() === em);
     setContactSelectValue(m ? m.id : "");
+    if (m) setContactComboInput(m.userName);
   }, [formOpen, readOnly, form.userEmail, contacts]);
 
   const filteredContacts = useMemo(() => {
-    const q = contactFilter.trim().toLowerCase();
+    const q = contactComboInput.trim().toLowerCase();
     if (!q) return contacts;
     return contacts.filter((c) => {
       const blob = `${c.userName} ${c.otherName} ${c.userEmail}`.toLowerCase();
       return blob.includes(q);
     });
-  }, [contacts, contactFilter]);
+  }, [contacts, contactComboInput]);
+
+  useEffect(() => {
+    if (!contactComboOpen) return;
+    function onDocMouseDown(e: MouseEvent) {
+      if (comboWrapRef.current && !comboWrapRef.current.contains(e.target as Node)) {
+        setContactComboOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setContactComboOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [contactComboOpen]);
 
   const recordBusy = useCallback((id: string, key: string | undefined) => {
     setRowBusy((prev) => {
@@ -245,7 +263,8 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
 
   function startEdit(s: Subscription) {
     setEditId(s.id);
-    setContactFilter("");
+    setContactComboInput("");
+    setContactComboOpen(false);
     setFormOpen(true);
     setForm({
       userName: s.userName,
@@ -266,30 +285,29 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
     setForm(emptyForm);
     setEditId(null);
     setFormOpen(false);
-    setContactFilter("");
+    setContactComboInput("");
+    setContactComboOpen(false);
     setContactSelectValue("");
     setAddContactOpen(false);
     setNewContact(emptyNewContact);
   }
 
-  function handleContactPick(value: string) {
-    if (value === "__add_new__") {
-      setNewContact(emptyNewContact);
-      setAddContactOpen(true);
-      return;
-    }
-    setContactSelectValue(value);
-    if (!value) {
-      return;
-    }
-    const c = contacts.find((x) => x.id === value);
-    if (c) {
-      setForm((f) => ({
-        ...f,
-        userName: c.userName,
-        userEmail: c.userEmail,
-      }));
-    }
+  function selectContactRow(c: SubscriptionContact) {
+    setForm((f) => ({
+      ...f,
+      userName: c.userName,
+      userEmail: c.userEmail,
+    }));
+    setContactSelectValue(c.id);
+    setContactComboInput(c.userName);
+    setContactComboOpen(false);
+  }
+
+  function openAddContactFromCombo() {
+    const q = contactComboInput.trim();
+    setNewContact({ userName: q, otherName: "", email: "" });
+    setAddContactOpen(true);
+    setContactComboOpen(false);
   }
 
   async function handleSaveNewContact(e: FormEvent) {
@@ -319,6 +337,7 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
         userEmail: created.userEmail,
       }));
       setContactSelectValue(created.id);
+      setContactComboInput(created.userName);
       setAddContactOpen(false);
       setNewContact(emptyNewContact);
     } catch (err) {
@@ -404,59 +423,130 @@ export default function SubscriptionPanel({ readOnly = false }: SubscriptionPane
           <h3 className="subscription-form-title">{editId ? "编辑订阅" : "新建订阅"}</h3>
           <div className="field-grid subscription-form-grid">
             <div className="field field-span-2 subscription-contact-picker">
-              <span className="field-label">选择使用者</span>
               <p className="subscription-contact-hint">
-                从系统联系人中选择；顶部 <strong>Add New</strong>{" "}
-                可新增姓名、Other Name 与邮箱。
+                搜索或点选联系人；首行 <strong>+ Add new</strong>{" "}
+                可录入姓名、Other Name 与邮箱。
               </p>
-              <input
-                className="field-input subscription-contact-filter"
-                type="search"
-                placeholder="筛选姓名、Other Name 或邮箱…"
-                value={contactFilter}
-                onChange={(e) => setContactFilter(e.target.value)}
-                autoComplete="off"
-                aria-label="筛选联系人"
-              />
-              <select
-                className="field-input subscription-contact-select"
-                value={contactSelectValue}
-                onChange={(e) => handleContactPick(e.target.value)}
-                disabled={contactsLoading}
-                aria-label="选择联系人"
-              >
-                <option value="">
-                  {contactsLoading ? "加载联系人…" : "— 请选择 —"}
-                </option>
-                <option value="__add_new__">＋ Add New</option>
-                {filteredContacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {contactOptionLabel(c)}
-                  </option>
-                ))}
-              </select>
+              <div className="subscription-contact-top-row">
+                <div
+                  className="subscription-combo-wrap"
+                  ref={comboWrapRef}
+                >
+                  <span className="field-label" id="subscription-combo-label">
+                    选择使用者
+                  </span>
+                  <div className="subscription-combo-input-row">
+                    <input
+                      className="field-input subscription-combo-input"
+                      type="text"
+                      placeholder={
+                        contactsLoading
+                          ? "加载联系人…"
+                          : "搜索姓名、Other Name 或邮箱…"
+                      }
+                      value={contactComboInput}
+                      onChange={(e) => {
+                        setContactComboInput(e.target.value);
+                        setContactComboOpen(true);
+                      }}
+                      onFocus={() => setContactComboOpen(true)}
+                      autoComplete="off"
+                      aria-labelledby="subscription-combo-label"
+                      aria-expanded={contactComboOpen}
+                      aria-controls="subscription-combo-listbox"
+                      role="combobox"
+                    />
+                    <button
+                      type="button"
+                      className="subscription-combo-chevron"
+                      aria-label="展开列表"
+                      tabIndex={-1}
+                      onClick={() => setContactComboOpen((o) => !o)}
+                    >
+                      ▾
+                    </button>
+                  </div>
+                  {contactComboOpen ? (
+                    <div
+                      className="subscription-combo-dropdown"
+                      id="subscription-combo-listbox"
+                      role="listbox"
+                    >
+                      <button
+                        type="button"
+                        className="subscription-combo-add"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={openAddContactFromCombo}
+                      >
+                        + Add new
+                        {contactComboInput.trim()
+                          ? ` ${contactComboInput.trim()}`
+                          : ""}
+                      </button>
+                      <div className="subscription-combo-divider" role="separator" />
+                      {filteredContacts.length === 0 ? (
+                        <div className="subscription-combo-empty">
+                          {contactsLoading ? "加载中…" : "无匹配联系人"}
+                        </div>
+                      ) : (
+                        <ul className="subscription-combo-list">
+                          {filteredContacts.map((c) => (
+                            <li key={c.id}>
+                              <button
+                                type="button"
+                                className={
+                                  contactSelectValue === c.id
+                                    ? "subscription-combo-row is-active"
+                                    : "subscription-combo-row"
+                                }
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => selectContactRow(c)}
+                              >
+                                <span className="subscription-combo-name">
+                                  {c.userName}
+                                </span>
+                                <span className="subscription-combo-meta">
+                                  {c.otherName.trim()
+                                    ? c.otherName.trim()
+                                    : c.userEmail}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                <label className="field subscription-email-inline">
+                  <span className="field-label">邮箱</span>
+                  <input
+                    className="field-input"
+                    type="email"
+                    value={form.userEmail}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, userEmail: e.target.value }))
+                    }
+                    required
+                    placeholder="name@example.com"
+                  />
+                </label>
+              </div>
+              <label className="field subscription-name-below">
+                <span className="field-label">使用者姓名</span>
+                <input
+                  className="field-input"
+                  value={form.userName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, userName: e.target.value }))
+                  }
+                  required
+                />
+                <span className="subscription-field-note">
+                  与上方选择联动，也可直接修改
+                </span>
+              </label>
             </div>
-            <label className="field">
-              <span className="field-label">使用者姓名</span>
-              <input
-                className="field-input"
-                value={form.userName}
-                onChange={(e) => setForm((f) => ({ ...f, userName: e.target.value }))}
-                required
-              />
-              <span className="subscription-field-note">可由上方选择填入，也可手改</span>
-            </label>
-            <label className="field">
-              <span className="field-label">邮箱</span>
-              <input
-                className="field-input"
-                type="email"
-                value={form.userEmail}
-                onChange={(e) => setForm((f) => ({ ...f, userEmail: e.target.value }))}
-                required
-              />
-              <span className="subscription-field-note">可由上方选择填入，也可手改</span>
-            </label>
             <label className="field">
               <span className="field-label">订阅服务</span>
               <input
