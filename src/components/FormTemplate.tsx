@@ -10,6 +10,7 @@ export interface FormTemplateProps {
   cashAdvance: number;
   businessPurpose?: string;
   managerName?: string;
+  paymentMethod?: string;
   /** 提交后由服务器分配的编号 EXPYYMMXX */
   reimbursementCode?: string | null;
 }
@@ -31,12 +32,20 @@ function needsFxColumns(base: string, expenses: ExpenseLine[]): boolean {
 
 const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
   function FormTemplate(
-    { header, expenses, cashAdvance, businessPurpose, managerName, reimbursementCode },
+    {
+      header,
+      expenses,
+      cashAdvance,
+      businessPurpose,
+      managerName,
+      paymentMethod,
+      reimbursementCode,
+    },
     ref
   ) {
     const baseCode = normalizeCurrency(header.baseCurrency);
     const showFx = needsFxColumns(header.baseCurrency, expenses);
-    const metaRows = reimbursementCode ? 7 : 6;
+    const metaRows = reimbursementCode ? 8 : 7;
 
     const subtotalBase = expenses.reduce(
       (s, e) => s + toBase(e.grossAmount, e.exchangeRate),
@@ -93,6 +102,14 @@ const FormTemplate = forwardRef<HTMLDivElement, FormTemplateProps>(
               </th>
               <td className="form-template__meta-value">
                 {managerName?.trim() || "—"}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row" className="form-template__meta-label">
+                Payment method
+              </th>
+              <td className="form-template__meta-value">
+                {paymentMethod?.trim() || "—"}
               </td>
             </tr>
             <tr>

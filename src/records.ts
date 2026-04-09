@@ -8,6 +8,8 @@ export interface ReimbursementRecord {
   cashAdvance: number;
   managerName: string;
   businessPurpose: string;
+  /** 付款方式（与确认页一致） */
+  paymentMethod: string;
 }
 
 /** 附件元数据（服务端仅存文件名；浏览器本地库已废弃报销后不再使用 Blob） */

@@ -242,6 +242,10 @@ export default function AdminPanel({
             <span>{reimbursement.managerName || "（未填写）"}</span>
           </div>
           <div className="admin-field">
+            <strong>付款方式</strong>
+            <span>{reimbursement.paymentMethod?.trim() || "（未填写）"}</span>
+          </div>
+          <div className="admin-field">
             <strong>预支抵扣</strong>
             <span>
               {formatMoney(

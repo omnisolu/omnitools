@@ -136,8 +136,18 @@ export function createExpenseDb(rootDir) {
     CREATE INDEX IF NOT EXISTS idx_project_presets_sort ON project_presets(sort_order, id);
   `);
   migrateLegacySmtpIfNeeded(db, rootDir);
+  migrateReimbursementPaymentMethodColumn(db);
   seedProfilePresetsIfEmpty(db);
   return { db, dbPath };
+}
+
+function migrateReimbursementPaymentMethodColumn(db) {
+  const cols = db.prepare(`PRAGMA table_info(reimbursements)`).all();
+  if (!cols.some((c) => c.name === "payment_method")) {
+    db.exec(
+      `ALTER TABLE reimbursements ADD COLUMN payment_method TEXT NOT NULL DEFAULT ''`
+    );
+  }
 }
 
 /** 与 src/company.ts、src/categories.ts 初始列表一致，仅在表为空时写入 */
@@ -567,13 +577,14 @@ export function insertReimbursementSubmission(db, payload) {
     cashAdvance,
     managerName,
     businessPurpose,
+    paymentMethod,
     lines,
     receiptFiles,
   } = payload;
 
   const insertR = db.prepare(`
-    INSERT INTO reimbursements (id, created_at, header_json, cash_advance, manager_name, business_purpose)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO reimbursements (id, created_at, header_json, cash_advance, manager_name, business_purpose, payment_method)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const insertL = db.prepare(`
     INSERT INTO expense_lines (id, reimbursement_id, line_index, date, description, category, line_currency, exchange_rate, gst, gross_amount)
@@ -591,7 +602,8 @@ export function insertReimbursementSubmission(db, payload) {
       JSON.stringify(header),
       cashAdvance,
       managerName,
-      businessPurpose
+      businessPurpose,
+      paymentMethod ?? ""
     );
     let fileOffset = 0;
     lines.forEach((line, lineIndex) => {
@@ -677,6 +689,7 @@ export function getAllReimbursementsForApi(db) {
         cashAdvance: r.cash_advance,
         managerName: r.manager_name,
         businessPurpose: r.business_purpose,
+        paymentMethod: r.payment_method ?? "",
       },
       expenses,
     };

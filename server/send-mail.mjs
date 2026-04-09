@@ -148,6 +148,21 @@ function normalizeMultipartOriginalFilename(name) {
   return name;
 }
 
+const PAYMENT_METHOD_MAX = 100;
+
+/** 与前端 sanitizePaymentMethod 一致，防止 HTML/脚本片段入库 */
+function sanitizePaymentMethodForStorage(raw) {
+  let s = String(raw ?? "")
+    .normalize("NFC")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/[<>]/g, "")
+    .replace(/`/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (s.length > PAYMENT_METHOD_MAX) s = s.slice(0, PAYMENT_METHOD_MAX);
+  return s;
+}
+
 function validateSubmitManifest(manifest, attachmentCount) {
   if (!manifest || typeof manifest !== "object") {
     return "缺少 manifest 元数据";
@@ -174,6 +189,13 @@ function validateSubmitManifest(manifest, attachmentCount) {
     if (names.length !== attachmentCount) {
       return `attachmentFilenames 数量（${names.length}）与附件数（${attachmentCount}）不一致`;
     }
+  }
+  const pm = manifest.paymentMethod;
+  if (pm !== undefined && pm !== null && typeof pm !== "string") {
+    return "paymentMethod 无效";
+  }
+  if (typeof pm === "string" && pm.length > 500) {
+    return "paymentMethod 过长";
   }
   return null;
 }
@@ -322,6 +344,7 @@ app.post(
         cashAdvance: Number(manifest.cashAdvance) || 0,
         managerName: String(manifest.managerName ?? ""),
         businessPurpose: String(manifest.businessPurpose ?? ""),
+        paymentMethod: sanitizePaymentMethodForStorage(manifest.paymentMethod),
         lines,
         receiptFiles,
       });

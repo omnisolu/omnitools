@@ -21,6 +21,10 @@ import AdminPanel from "./AdminPanel";
 import SubscriptionPanel from "./SubscriptionPanel";
 import { formatIsoDateRange } from "./formatIsoDate";
 import type { ExpenseLine, HeaderInfo } from "./types";
+import {
+  PAYMENT_METHOD_MAX_LEN,
+  sanitizePaymentMethodInput,
+} from "./sanitizePaymentMethod";
 import "./App.css";
 
 function isAllowedAttachment(file: File): boolean {
@@ -103,6 +107,7 @@ export default function App() {
 
   const [cashAdvanceStr, setCashAdvanceStr] = useState("0");
   const [managerName, setManagerName] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [businessPurpose, setBusinessPurpose] = useState("");
   const [dbBusy, setDbBusy] = useState(false);
   const [dbMessage, setDbMessage] = useState<string | null>(null);
@@ -569,6 +574,7 @@ export default function App() {
           cashAdvance: cashAdvanceNum,
           managerName,
           businessPurpose,
+          paymentMethod: sanitizePaymentMethodInput(paymentMethod),
           attachmentFilenames: expenses.flatMap((e) =>
             e.files.map((f) => f.name)
           ),
@@ -733,6 +739,20 @@ export default function App() {
                     />
                   </label>
                   <label className="field">
+                    <span className="field-label">付款方式 Payment method</span>
+                    <input
+                      className="field-input"
+                      value={paymentMethod}
+                      onChange={(e) =>
+                        setPaymentMethod(sanitizePaymentMethodInput(e.target.value))
+                      }
+                      maxLength={PAYMENT_METHOD_MAX_LEN}
+                      placeholder="例如：银行转账、支票（可选，最多 100 字）"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="field">
                     <span className="field-label">预支抵扣 Cash advance</span>
                     <input
                       className="field-input"
@@ -792,6 +812,10 @@ export default function App() {
                   <div className="review-dl-row">
                     <dt>经理</dt>
                     <dd>{managerName.trim() || "—"}</dd>
+                  </div>
+                  <div className="review-dl-row">
+                    <dt>付款方式</dt>
+                    <dd>{sanitizePaymentMethodInput(paymentMethod) || "—"}</dd>
                   </div>
                   <div className="review-dl-row">
                     <dt>预支抵扣</dt>
@@ -870,6 +894,7 @@ export default function App() {
                 expenses={expenses}
                 cashAdvance={cashAdvanceNum}
                 managerName={managerName}
+                paymentMethod={paymentMethod}
                 businessPurpose={businessPurpose}
                 reimbursementCode={submittedReimbursementId}
               />

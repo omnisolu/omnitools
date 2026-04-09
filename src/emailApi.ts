@@ -127,6 +127,8 @@ export interface SubmitReimbursementManifest {
   cashAdvance: number;
   managerName: string;
   businessPurpose: string;
+  /** 付款方式，纯文本，最多 100 字（服务端再次净化） */
+  paymentMethod: string;
   /** 与 FormData 中 attachments 顺序一致，用于避免 multipart 文件名编码被错误解析 */
   attachmentFilenames: string[];
   lines: Array<{
