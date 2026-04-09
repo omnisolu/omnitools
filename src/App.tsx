@@ -159,6 +159,8 @@ export default function App() {
   }, [header]);
 
   const gstNum = parseMoney(lineGst);
+  /** GST 可不填，空视为 0 */
+  const gstAmount = lineGst.trim() === "" ? 0 : gstNum;
   const grossNum = parseMoney(lineGross);
   const rateNum = parsePositiveRate(lineExchangeRate);
 
@@ -185,9 +187,9 @@ export default function App() {
     Boolean(lineCategory) &&
     Boolean(normalizeCurrency(lineCurrency)) &&
     rateNum !== null &&
-    gstNum !== null &&
+    gstAmount !== null &&
     grossNum !== null &&
-    grossNum >= gstNum &&
+    grossNum >= gstAmount &&
     lineFiles.length > 0 &&
     lineFiles.every((f) => isAllowedAttachment(f));
 
@@ -225,7 +227,7 @@ export default function App() {
       category: lineCategory,
       lineCurrency: normalizeCurrency(lineCurrency),
       exchangeRate: rateNum!,
-      gst: gstNum!,
+      gst: gstAmount!,
       grossAmount: grossNum!,
       files: [...lineFiles],
     };
@@ -237,7 +239,7 @@ export default function App() {
     if (e.category !== lineCategory) return false;
     if (normalizeCurrency(e.lineCurrency) !== normalizeCurrency(lineCurrency)) return false;
     if (Math.abs(e.exchangeRate - (rateNum ?? 0)) > 1e-9) return false;
-    if (Math.abs(e.gst - (gstNum ?? NaN)) > 1e-6) return false;
+    if (Math.abs(e.gst - (gstAmount ?? NaN)) > 1e-6) return false;
     if (Math.abs(e.grossAmount - (grossNum ?? NaN)) > 1e-6) return false;
     if (e.files.length !== lineFiles.length) return false;
     for (let i = 0; i < e.files.length; i++) {
@@ -374,7 +376,7 @@ export default function App() {
     if (
       !lineValid ||
       lineFiles.length === 0 ||
-      gstNum === null ||
+      gstAmount === null ||
       grossNum === null ||
       rateNum === null
     )
@@ -394,7 +396,7 @@ export default function App() {
       category: lineCategory,
       lineCurrency: normalizeCurrency(lineCurrency),
       exchangeRate: rateNum,
-      gst: gstNum,
+      gst: gstAmount,
       grossAmount: grossNum,
       files: [...lineFiles],
     };
@@ -1062,8 +1064,9 @@ export default function App() {
                     添加报销明细
                   </h2>
                   <p className="card-hint">
-                    GST、总金额为<strong>本行币种</strong>金额。汇率表示：基准金额 = 本行金额 ×
-                    汇率（1 单位本行币种兑多少{normalizeCurrency(header.baseCurrency) || "基准"}）。
+                    <strong>GST 可留空（视为 0）</strong>；总金额为<strong>本行币种</strong>金额。汇率表示：基准金额 =
+                    本行金额 × 汇率（1 单位本行币种兑多少
+                    {normalizeCurrency(header.baseCurrency) || "基准"}）。
                     每条至少上传一个附件（可多次「选择文件」追加）；信息齐全后「下一个」才可点。
                   </p>
                   <p className="card-hint card-hint--sub">
@@ -1163,13 +1166,13 @@ export default function App() {
                       />
                     </label>
                     <label className="field">
-                      <span className="field-label">GST（本行币种）</span>
+                      <span className="field-label">GST（本行币种，可选）</span>
                       <input
                         className="field-input"
                         inputMode="decimal"
                         value={lineGst}
                         onChange={(e) => setLineGst(e.target.value)}
-                        placeholder="0.00"
+                        placeholder="留空视为 0"
                       />
                     </label>
                     <label className="field">
@@ -1245,8 +1248,8 @@ export default function App() {
                     </div>
                   </div>
                   {grossNum !== null &&
-                    gstNum !== null &&
-                    grossNum < gstNum && (
+                    gstAmount !== null &&
+                    grossNum < gstAmount && (
                       <p className="field-error" role="alert">
                         总金额应大于或等于 GST。
                       </p>
